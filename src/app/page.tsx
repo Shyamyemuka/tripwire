@@ -61,6 +61,10 @@ export default function Home() {
     setMode(newMode);
   };
 
+  const handleRunBenchmark = () => {
+    handleSubmitQuestion("Run full factual audit: Compare revenue growth, operating expenses, and future expansion plans.");
+  };
+
   // Submit a question and stream response with inline sentence verification
   const handleSubmitQuestion = async (questionText: string) => {
     if (!sessionId || !documentFullText || isStreaming) return;
@@ -320,6 +324,7 @@ export default function Home() {
             totalClaimsVerified={totalClaimsVerified}
             avgRetrievalLatencyMs={avgRetrievalLatencyMs}
             onResetDocument={handleResetDocument}
+            onRunBenchmark={handleRunBenchmark}
           />
 
           <main className="flex-1 flex flex-col justify-between">

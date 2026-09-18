@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { DocumentMeta, RetrievalMode } from '@/lib/types';
-import { FileText, AlertTriangle, Zap, Database, RotateCcw } from 'lucide-react';
+import { FileText, AlertTriangle, Zap, Database, RotateCcw, Sparkles } from 'lucide-react';
 
 interface TopBarProps {
   documentMeta: DocumentMeta;
@@ -12,6 +12,7 @@ interface TopBarProps {
   totalClaimsVerified: number;
   avgRetrievalLatencyMs: number;
   onResetDocument: () => void;
+  onRunBenchmark?: () => void;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
@@ -22,6 +23,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   totalClaimsVerified,
   avgRetrievalLatencyMs,
   onResetDocument,
+  onRunBenchmark,
 }) => {
   return (
     <header className="border-b border-zinc-200 dark:border-zinc-800 bg-white/80 dark:bg-zinc-950/80 backdrop-blur-md sticky top-0 z-30 px-4 py-2.5">
@@ -80,18 +82,38 @@ export const TopBar: React.FC<TopBarProps> = ({
             </button>
           </div>
 
-          {/* Real-time Measured Latency Readout */}
+          {/* Real-time Measured Latency Readout & Speedup Advantage */}
           <div className="flex items-center gap-2 border-l border-zinc-200 dark:border-zinc-800 pl-3">
             <div className="text-right">
-              <div className="text-[11px] font-mono font-semibold text-zinc-900 dark:text-zinc-100">
-                {lastRetrievalLatencyMs !== null
-                  ? `${mode === 'moss' ? 'Moss' : 'Baseline'} retrieval: ${lastRetrievalLatencyMs.toFixed(1)}ms`
-                  : 'Ready'}
+              <div className="text-[11px] font-mono font-semibold text-zinc-900 dark:text-zinc-100 flex items-center justify-end gap-1.5">
+                {lastRetrievalLatencyMs !== null ? (
+                  <>
+                    <span>{mode === 'moss' ? 'Moss' : 'Baseline'}: {lastRetrievalLatencyMs.toFixed(1)}ms</span>
+                    {mode === 'moss' && lastRetrievalLatencyMs < 30 && (
+                      <span className="px-1.5 py-0.2 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 text-[10px]">
+                        Sub-30ms
+                      </span>
+                    )}
+                  </>
+                ) : (
+                  'Ready'
+                )}
               </div>
               <div className="text-[10px] text-zinc-500">
                 verified {totalClaimsVerified} claims · avg {avgRetrievalLatencyMs.toFixed(1)}ms
               </div>
             </div>
+
+            {onRunBenchmark && (
+              <button
+                onClick={onRunBenchmark}
+                title="Run live hallucination test suite for judges"
+                className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 font-semibold text-[11px] hover:bg-emerald-500/20 transition-all shrink-0 ml-1"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-emerald-500" />
+                Judge Test
+              </button>
+            )}
           </div>
         </div>
       </div>

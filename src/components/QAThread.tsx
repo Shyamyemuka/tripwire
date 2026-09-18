@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { QATurn, SentenceVerificationRecord, VerificationStatus } from '@/lib/types';
-import { Bot, User, AlertCircle, AlertTriangle, ArrowRight, Sparkles, HelpCircle } from 'lucide-react';
+import { Bot, User, AlertCircle, AlertTriangle, ArrowRight, Sparkles } from 'lucide-react';
 
 interface QAThreadProps {
   qaTurns: QATurn[];
