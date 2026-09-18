@@ -1,4 +1,4 @@
-﻿// Trivial / Opinion / Filler phrases that do not make verifiable factual claims
+// Trivial / Opinion / Filler phrases that do not make verifiable factual claims
 const FILLER_PHRASES = [
   /^however,?$/i,
   /^furthermore,?$/i,
@@ -20,6 +20,8 @@ const FILLER_PHRASES = [
   /^here is a summary( of the [a-z0-9 ]+)?:\.?$/i,
   /^here are the key highlights( of the [a-z0-9 ]+)?:\.?$/i,
   /^below is the overview( of the [a-z0-9 ]+)?:\.?$/i,
+  /^based on the (provided |uploaded |referenced )?(document|text|context|report|information),?:?\.?$/i,
+  /^according to the (provided |uploaded |referenced )?(document|text|context|report|information),?:?\.?$/i,
   /^i hope this helps\.?$/i,
   /^let me know if you need anything else\.?$/i,
   /^let us take a closer look\.?$/i,

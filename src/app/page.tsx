@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React, { useState } from 'react';
 import { UploadScreen } from '@/components/UploadScreen';
@@ -251,22 +251,25 @@ export default function Home() {
           if (line.startsWith('data: ')) {
             const raw = line.slice(6).trim();
             if (!raw) continue;
+            let payload: { token?: string; done?: boolean; error?: string };
             try {
-              const payload = JSON.parse(raw);
-              if (payload.token) {
-                const completedSentences = detector.addToken(payload.token);
-                for (const s of completedSentences) {
-                  appendSentence(s);
-                }
-              }
-              if (payload.done) {
-                break;
-              }
-              if (payload.error) {
-                throw new Error(payload.error);
-              }
+              payload = JSON.parse(raw);
             } catch {
               // Ignore partial JSON chunks
+              continue;
+            }
+
+            if (payload.error) {
+              throw new Error(payload.error);
+            }
+            if (payload.token) {
+              const completedSentences = detector.addToken(payload.token);
+              for (const s of completedSentences) {
+                appendSentence(s);
+              }
+            }
+            if (payload.done) {
+              break;
             }
           }
         }

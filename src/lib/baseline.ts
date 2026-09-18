@@ -24,10 +24,10 @@ export async function queryBaselineCosine(
   chunks: ChunkRecord[],
   topK = 3
 ): Promise<{ candidates: CandidatePassage[]; timeTakenInMs: number }> {
+  const startTime = performance.now();
+
   // Generate embedding for query sentence
   const queryEmbedding = await generateTextEmbedding(queryText);
-
-  const startTime = performance.now();
 
   const scoredChunks: Array<{ chunk: ChunkRecord; score: number }> = [];
 

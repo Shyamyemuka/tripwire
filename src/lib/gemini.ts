@@ -1,29 +1,67 @@
-﻿import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI } from '@google/genai';
 import { CandidatePassage, VerificationStatus } from './types';
 
-function getGeminiClient(): GoogleGenAI | null {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key || key.startsWith('your_google_gemini')) {
-    return null;
-  }
-  return new GoogleGenAI({ apiKey: key });
+function getAvailableGeminiKeys(): string[] {
+  const keys = [
+    process.env.GEMINI_API_KEY_1,
+    process.env.GEMINI_API_KEY_2,
+    process.env.GEMINI_API_KEY
+  ].filter((k): k is string => !!k && !k.startsWith('your_google_gemini'));
+  return Array.from(new Set(keys));
 }
 
-export const GENERATION_MODEL = process.env.GEMINI_GENERATION_MODEL || 'gemini-2.5-flash';
-export const VERDICT_MODEL = process.env.GEMINI_VERDICT_MODEL || 'gemini-2.5-flash';
-export const EXPLANATION_MODEL = process.env.GEMINI_EXPLANATION_MODEL || 'gemini-2.5-flash';
-export const EMBEDDING_MODEL = 'text-embedding-004';
+let activeKeyIndex = 0;
 
 /**
- * FR-4: Whole-document stuffed streaming generation
+ * Executes a Gemini API call with automatic multi-key failover.
+ * If the active key hits an error (rate limit, quota exceeded, 429, timeout, etc.),
+ * it switches to the next configured key and remembers it for subsequent calls.
+ */
+async function callGeminiWithFailover<T>(
+  operation: (client: GoogleGenAI, keyIndex: number) => Promise<T>
+): Promise<T> {
+  const keys = getAvailableGeminiKeys();
+  if (keys.length === 0) {
+    throw new Error('GEMINI_API_KEY_1 or GEMINI_API_KEY_2 is not configured in .env. Please check your keys.');
+  }
+
+  let lastError: unknown;
+  for (let attempt = 0; attempt < keys.length; attempt++) {
+    const keyIdx = (activeKeyIndex + attempt) % keys.length;
+    const client = new GoogleGenAI({ apiKey: keys[keyIdx] });
+
+    try {
+      const result = await operation(client, keyIdx);
+      if (activeKeyIndex !== keyIdx) {
+        console.log(`[Gemini Failover] Switched active key to #${keyIdx + 1}`);
+        activeKeyIndex = keyIdx;
+      }
+      return result;
+    } catch (err: unknown) {
+      lastError = err;
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[Gemini Failover] Key #${keyIdx + 1} failed: ${msg}. Trying next key...`);
+    }
+  }
+
+  throw lastError;
+}
+
+export const GENERATION_MODEL = process.env.GEMINI_GENERATION_MODEL || 'gemini-3.6-flash';
+export const VERDICT_MODEL = process.env.GEMINI_VERDICT_MODEL || 'gemini-3.1-flash-lite';
+export const EXPLANATION_MODEL = process.env.GEMINI_EXPLANATION_MODEL || 'gemini-3.1-flash-lite';
+export const EMBEDDING_MODEL = process.env.GEMINI_EMBEDDING_MODEL || 'gemini-embedding-2';
+
+/**
+ * FR-4: Whole-document stuffed streaming generation with multi-key failover
  */
 export async function* streamAnswerGeneration(
   question: string,
   documentText: string
 ): AsyncGenerator<string, void, unknown> {
-  const client = getGeminiClient();
-  if (!client) {
-    throw new Error('GEMINI_API_KEY is not configured in .env. Please add your key from https://aistudio.google.com/');
+  const keys = getAvailableGeminiKeys();
+  if (keys.length === 0) {
+    throw new Error('GEMINI_API_KEY_1 or GEMINI_API_KEY_2 is not configured in .env. Please add your key from https://aistudio.google.com/');
   }
 
   const systemInstruction = `You are a factual, concise enterprise assistant. Answer the user's question accurately using ONLY the provided document context.
@@ -39,14 +77,36 @@ USER QUESTION: ${question}
 
 Provide a comprehensive, factual answer based on the document above.`;
 
-  const stream = await client.models.generateContentStream({
-    model: GENERATION_MODEL,
-    contents: prompt,
-    config: {
-      systemInstruction,
-      temperature: 0.2,
+  let stream = null;
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < keys.length; attempt++) {
+    const keyIdx = (activeKeyIndex + attempt) % keys.length;
+    const client = new GoogleGenAI({ apiKey: keys[keyIdx] });
+    try {
+      stream = await client.models.generateContentStream({
+        model: GENERATION_MODEL,
+        contents: prompt,
+        config: {
+          systemInstruction,
+          temperature: 0.2,
+        }
+      });
+      if (activeKeyIndex !== keyIdx) {
+        console.log(`[Gemini Failover] Generation stream active on key #${keyIdx + 1}`);
+        activeKeyIndex = keyIdx;
+      }
+      break;
+    } catch (err) {
+      lastError = err;
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[Gemini Failover] Stream start failed on key #${keyIdx + 1}: ${msg}. Trying next key...`);
     }
-  });
+  }
+
+  if (!stream) {
+    throw (lastError instanceof Error ? lastError : new Error('All configured Gemini API keys failed to generate stream.'));
+  }
 
   for await (const chunk of stream) {
     if (chunk.text) {
@@ -123,24 +183,25 @@ export async function classifySentenceVerdict(
     };
   }
 
-  // Pre-check for direction or numeric flip against candidate passages
-  for (const p of passages) {
-    if (hasDirectionFlip(sentence, p.text)) {
-      return {
-        status: 'RED',
-        reasoning: 'Direction word contradiction detected against source passage.'
-      };
-    }
-    if (hasNumericConflict(sentence, p.text)) {
-      return {
-        status: 'RED',
-        reasoning: 'Numerical discrepancy detected against source passage metrics.'
-      };
-    }
+  // Pre-check for direction or numeric conflict
+  const bestPassage = passages[0];
+  if (hasDirectionFlip(sentence, bestPassage.text)) {
+    return {
+      status: 'RED',
+      reasoning: 'Direction word contradiction detected against source passage.'
+    };
   }
 
-  const client = getGeminiClient();
-  if (!client) {
+  // If the sentence mentions numbers/metrics and EVERY candidate passage has conflicting numbers:
+  if (hasNumericConflict(sentence, bestPassage.text) && passages.every(p => hasNumericConflict(sentence, p.text))) {
+    return {
+      status: 'RED',
+      reasoning: 'Numerical discrepancy detected against source passage metrics.'
+    };
+  }
+
+  const keys = getAvailableGeminiKeys();
+  if (keys.length === 0) {
     // Offline / unconfigured key fallback:
     // Invariant 1 & 3: Never default to GREEN if numbers exist and are unverified!
     const bestPassage = passages[0];
@@ -211,35 +272,37 @@ Return your evaluation as a valid JSON object with the exact keys:
 }`;
 
   try {
-    const response = await client.models.generateContent({
-      model: VERDICT_MODEL,
-      contents: prompt,
-      config: {
-        temperature: 0.0,
-        responseMimeType: 'application/json'
+    return await callGeminiWithFailover(async (client) => {
+      const response = await client.models.generateContent({
+        model: VERDICT_MODEL,
+        contents: prompt,
+        config: {
+          temperature: 0.0,
+          responseMimeType: 'application/json'
+        }
+      });
+
+      const rawText = response.text || '';
+      const parsed = JSON.parse(rawText.trim());
+
+      const rawVerdict = String(parsed.verdict || '').toUpperCase();
+      let status: VerificationStatus = 'AMBER';
+
+      if (rawVerdict === 'SUPPORTED') {
+        status = 'GREEN';
+      } else if (rawVerdict === 'CONTRADICTED') {
+        status = 'RED';
+      } else {
+        status = 'AMBER';
       }
+
+      return {
+        status,
+        reasoning: parsed.reasoning || ''
+      };
     });
-
-    const rawText = response.text || '';
-    const parsed = JSON.parse(rawText.trim());
-
-    const rawVerdict = String(parsed.verdict || '').toUpperCase();
-    let status: VerificationStatus = 'AMBER';
-
-    if (rawVerdict === 'SUPPORTED') {
-      status = 'GREEN';
-    } else if (rawVerdict === 'CONTRADICTED') {
-      status = 'RED';
-    } else {
-      status = 'AMBER';
-    }
-
-    return {
-      status,
-      reasoning: parsed.reasoning || ''
-    };
   } catch (err: unknown) {
-    console.error('Error in classifySentenceVerdict, falling back to AMBER:', err);
+    console.error('Error in classifySentenceVerdict across all keys, falling back to AMBER:', err);
     return {
       status: 'AMBER',
       reasoning: 'Verdict evaluation encountered an error; defaulted to unverifiable.'
@@ -256,8 +319,8 @@ export async function generateMismatchExplanation(
   matchedPassageText: string,
   status: 'RED' | 'AMBER'
 ): Promise<string> {
-  const client = getGeminiClient();
-  if (!client) {
+  const keys = getAvailableGeminiKeys();
+  if (keys.length === 0) {
     return status === 'RED'
       ? 'Contradiction detected between claim and source text.'
       : 'Source passage does not fully substantiate claim.';
@@ -276,17 +339,19 @@ Example: "Source states costs rose 8% due to hiring; this sentence claims a 30% 
 Do not write commentary or preface. Output only the single sentence.`;
 
   try {
-    const response = await client.models.generateContent({
-      model: EXPLANATION_MODEL,
-      contents: prompt,
-      config: {
-        temperature: 0.1,
-      }
-    });
+    return await callGeminiWithFailover(async (client) => {
+      const response = await client.models.generateContent({
+        model: EXPLANATION_MODEL,
+        contents: prompt,
+        config: {
+          temperature: 0.1,
+        }
+      });
 
-    return (response.text || '').trim();
+      return (response.text || '').trim();
+    });
   } catch (err) {
-    console.error('Error generating explanation:', err);
+    console.error('Error generating explanation across all keys:', err);
     return status === 'RED'
       ? 'Contradiction identified between claim and source text.'
       : 'No direct supporting evidence found in document.';
@@ -297,25 +362,27 @@ Do not write commentary or preface. Output only the single sentence.`;
  * FR-12: Generate embeddings for baseline cosine similarity comparison
  */
 export async function generateTextEmbedding(text: string): Promise<number[]> {
-  const client = getGeminiClient();
-  if (!client) {
+  const keys = getAvailableGeminiKeys();
+  if (keys.length === 0) {
     return generateFallbackEmbedding(text);
   }
 
   try {
-    const response = await client.models.embedContent({
-      model: EMBEDDING_MODEL,
-      contents: text
-    });
+    return await callGeminiWithFailover(async (client) => {
+      const response = await client.models.embedContent({
+        model: EMBEDDING_MODEL,
+        contents: text
+      });
 
-    const resObj = response as { embedding?: { values?: number[] }; embeddings?: Array<{ values?: number[] }> };
-    const values = resObj?.embedding?.values || resObj?.embeddings?.[0]?.values;
-    if (values && values.length > 0) {
-      return values;
-    }
-    return generateFallbackEmbedding(text);
+      const resObj = response as { embedding?: { values?: number[] }; embeddings?: Array<{ values?: number[] }> };
+      const values = resObj?.embedding?.values || resObj?.embeddings?.[0]?.values;
+      if (values && values.length > 0) {
+        return values;
+      }
+      return generateFallbackEmbedding(text);
+    });
   } catch (err) {
-    console.warn('Embedding API call failed, using fallback embedding:', err);
+    console.warn('Embedding API call failed on all keys, using fallback embedding:', err);
     return generateFallbackEmbedding(text);
   }
 }

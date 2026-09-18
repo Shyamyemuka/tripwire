@@ -65,16 +65,22 @@ export async function POST(req: NextRequest) {
     const { chunks, meta } = chunkResult;
 
     // Generate baseline embeddings for each chunk (for FR-12)
-    // Batch processing to keep indexing fast
-    const enrichedChunks: ChunkRecord[] = await Promise.all(
-      chunks.map(async (chunk) => {
-        const embedding = await generateTextEmbedding(chunk.text);
-        return {
-          ...chunk,
-          embedding
-        };
-      })
-    );
+    // Concurrency-controlled batch processing to prevent API burst limits
+    const enrichedChunks: ChunkRecord[] = [];
+    const BATCH_SIZE = 8;
+    for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
+      const slice = chunks.slice(i, i + BATCH_SIZE);
+      const batchEnriched = await Promise.all(
+        slice.map(async (chunk) => {
+          const embedding = await generateTextEmbedding(chunk.text);
+          return {
+            ...chunk,
+            embedding
+          };
+        })
+      );
+      enrichedChunks.push(...batchEnriched);
+    }
 
     // Index into Moss
     await indexDocumentInMoss(sessionId, enrichedChunks);

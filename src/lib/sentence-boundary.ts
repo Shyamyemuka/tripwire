@@ -53,6 +53,26 @@ export class SentenceDetector {
   private findNextBoundary(): { endIndex: number } | null {
     for (let i = 0; i < this.buffer.length; i++) {
       const char = this.buffer[i];
+
+      // Colon followed by newline is a header / intro boundary (e.g. "Based on the provided document:\n\n")
+      if (char === ':') {
+        const after = this.buffer.slice(i + 1);
+        if (/^\s*\n/.test(after)) {
+          return { endIndex: i + 1 };
+        }
+      }
+
+      // Newline followed by list item or heading or double-newline paragraph break
+      if (char === '\n') {
+        const after = this.buffer.slice(i + 1);
+        if (/^\s*([-*•#]|\d+\.)\s+/.test(after)) {
+          return { endIndex: i + 1 };
+        }
+        if (i + 1 < this.buffer.length && this.buffer[i + 1] === '\n') {
+          return { endIndex: i + 2 };
+        }
+      }
+
       if (char === '.' || char === '!' || char === '?') {
         if (this.isFalseBoundary(i)) {
           continue;
@@ -78,8 +98,8 @@ export class SentenceDetector {
             const remainder = this.buffer.slice(endIdx).trimStart();
             if (remainder.length > 0) {
               const firstChar = remainder[0];
-              // Valid sentence start: Uppercase letter, opening quote, or start of number
-              if (/[A-Z"-'(\d]/.test(firstChar)) {
+              // Valid sentence start: Uppercase letter, quote, bracket, digit, or markdown symbol (*, -, #, `)
+              if (/[A-Z"'\(\[\d\*\-\#_\`]/.test(firstChar)) {
                 return { endIndex: endIdx };
               } else {
                 continue;
