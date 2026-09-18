@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React from 'react';
 import { SentenceVerificationRecord } from '@/lib/types';
@@ -95,8 +95,16 @@ export const SourcePanel: React.FC<SourcePanelProps> = ({ sentenceRecord, onClos
 
         {/* Explanation if Contradicted or Amber */}
         {sentenceRecord.explanation && (
-          <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-xs text-rose-700 dark:text-rose-300">
-            <span className="font-semibold block mb-1">Mismatch Analysis:</span>
+          <div
+            className={`p-3.5 rounded-xl border text-xs leading-relaxed ${
+              sentenceRecord.status === 'RED'
+                ? 'bg-rose-500/10 border-rose-500/25 text-rose-700 dark:text-rose-300'
+                : 'bg-amber-500/10 border-amber-500/25 text-amber-800 dark:text-amber-300'
+            }`}
+          >
+            <span className="font-semibold block mb-1">
+              {sentenceRecord.status === 'RED' ? 'Contradiction Analysis:' : 'Unverified Claim Grounding Issue:'}
+            </span>
             {sentenceRecord.explanation}
           </div>
         )}

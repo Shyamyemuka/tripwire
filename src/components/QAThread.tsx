@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { QATurn, SentenceVerificationRecord, VerificationStatus } from '@/lib/types';
-import { Bot, User, AlertCircle, Sparkles, HelpCircle } from 'lucide-react';
+import { Bot, User, AlertCircle, AlertTriangle, ArrowRight, Sparkles, HelpCircle } from 'lucide-react';
 
 interface QAThreadProps {
   qaTurns: QATurn[];
@@ -203,30 +203,33 @@ export const QAThread: React.FC<QAThreadProps> = ({
                       const { sentence, index, status, cleanedText } = item;
                       const isSelected = selectedSentenceId === sentence.sentenceId;
 
-                      let underlineStyle = '';
+                      let highlightStyle = '';
                       let title = '';
 
                       switch (status) {
                         case 'GREEN':
-                          underlineStyle = 'underline decoration-emerald-500 decoration-2 underline-offset-4 bg-emerald-500/10 rounded-sm px-1 py-0.5 cursor-pointer hover:bg-emerald-500/20 transition-colors';
-                          title = `Supported by source (${sentence.retrievalLatencyMs.toFixed(1)}ms retrieval) — Click to view source`;
+                          // Authentic PDF-style fluorescent green highlighter
+                          highlightStyle = 'bg-emerald-400/25 dark:bg-emerald-500/25 text-zinc-900 dark:text-zinc-100 rounded px-1 py-0.5 box-decoration-clone cursor-pointer hover:bg-emerald-400/40 dark:hover:bg-emerald-500/40 transition-colors';
+                          title = `Supported by source (${sentence.retrievalLatencyMs.toFixed(1)}ms retrieval) — Click to inspect in side panel`;
                           break;
                         case 'RED':
-                          underlineStyle = 'underline decoration-rose-500 decoration-2 underline-offset-4 bg-rose-500/10 text-rose-900 dark:text-rose-200 rounded-sm px-1 py-0.5 cursor-pointer hover:bg-rose-500/20 transition-colors font-medium';
-                          title = 'Contradiction detected! Click to audit source passage';
+                          // Authentic PDF-style fluorescent rose/red highlighter
+                          highlightStyle = 'bg-rose-500/25 dark:bg-rose-500/30 text-rose-950 dark:text-rose-100 font-medium rounded px-1 py-0.5 box-decoration-clone cursor-pointer hover:bg-rose-500/40 dark:hover:bg-rose-500/45 transition-colors';
+                          title = 'Contradiction detected! Click to inspect in side panel';
                           break;
                         case 'AMBER':
-                          underlineStyle = 'underline decoration-amber-500 decoration-2 underline-offset-4 bg-amber-500/10 rounded-sm px-1 py-0.5 cursor-pointer hover:bg-amber-500/20 transition-colors';
-                          title = 'Unverifiable / No direct match — Click to audit';
+                          // Authentic PDF-style fluorescent amber/yellow highlighter
+                          highlightStyle = 'bg-amber-400/30 dark:bg-amber-400/25 text-amber-950 dark:text-amber-100 rounded px-1 py-0.5 box-decoration-clone cursor-pointer hover:bg-amber-400/45 dark:hover:bg-amber-400/35 transition-colors';
+                          title = 'Unverifiable / No direct match — Click to inspect in side panel';
                           break;
                         case 'GREY':
-                          underlineStyle = 'text-zinc-500 dark:text-zinc-400 no-underline';
+                          highlightStyle = 'text-zinc-500 dark:text-zinc-400';
                           title = 'Not a factual claim (opinion / transition)';
                           break;
                         case 'PENDING':
                         default:
-                          underlineStyle = 'text-zinc-800 dark:text-zinc-200';
-                          title = 'Verifying...';
+                          highlightStyle = 'text-zinc-700 dark:text-zinc-300 opacity-80 animate-pulse';
+                          title = 'Verifying sentence...';
                           break;
                       }
 
@@ -239,8 +242,8 @@ export const QAThread: React.FC<QAThreadProps> = ({
                             }
                           }}
                           title={title}
-                          className={`inline transition-all ${underlineStyle} ${
-                            isSelected ? 'ring-2 ring-emerald-500 ring-offset-1' : ''
+                          className={`inline transition-all ${highlightStyle} ${
+                            isSelected ? 'ring-2 ring-emerald-500 dark:ring-emerald-400 ring-offset-1 dark:ring-offset-zinc-900' : ''
                           }`}
                         >
                           {renderMarkdownInline(cleanedText)}{' '}
@@ -288,37 +291,91 @@ export const QAThread: React.FC<QAThreadProps> = ({
                   })}
                 </div>
 
-                {/* FR-10: Async Non-Blocking Explanation Blocks for Flagged Sentences */}
-                <div className="space-y-2 pt-2">
-                  {turn.answerSentences.map((sentence) => {
-                    if (!sentence.explanation) return null;
+                {/* FR-10: Single Consolidated Audit Card for Flagged Claims */}
+                {(() => {
+                  const flaggedItems = turn.answerSentences.filter(
+                    (s) => (s.status === 'RED' || s.status === 'AMBER') && s.explanation
+                  );
 
-                    const isRed = sentence.status === 'RED';
-                    return (
-                      <div
-                        key={`expl-${sentence.sentenceId}`}
-                        onClick={() => onSelectSentence(sentence)}
-                        className={`p-3 rounded-xl text-xs flex items-start gap-2.5 cursor-pointer transition-all border ${
-                          isRed
-                            ? 'bg-rose-500/5 border-rose-500/20 text-rose-800 dark:text-rose-300 hover:bg-rose-500/10'
-                            : 'bg-amber-500/5 border-amber-500/20 text-amber-800 dark:text-amber-300 hover:bg-amber-500/10'
-                        }`}
-                      >
-                        {isRed ? (
-                          <AlertCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
-                        ) : (
-                          <HelpCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
-                        )}
-                        <div className="space-y-0.5">
-                          <span className="font-semibold block text-[11px]">
-                            {isRed ? 'Fact Contradiction Detected:' : 'Unverified Claim Notice:'}
+                  if (flaggedItems.length === 0) return null;
+
+                  const hasRed = flaggedItems.some((s) => s.status === 'RED');
+
+                  return (
+                    <div
+                      className={`mt-4 p-4 rounded-xl text-xs border transition-all ${
+                        hasRed
+                          ? 'bg-rose-500/5 border-rose-500/25 text-rose-950 dark:text-rose-200'
+                          : 'bg-amber-500/5 border-amber-500/25 text-amber-950 dark:text-amber-200'
+                      }`}
+                    >
+                      {/* Card Header */}
+                      <div className="flex items-center justify-between pb-2 border-b border-zinc-200/50 dark:border-zinc-700/50">
+                        <div className="flex items-center gap-2">
+                          {hasRed ? (
+                            <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
+                          ) : (
+                            <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
+                          )}
+                          <span className="font-semibold text-xs text-zinc-900 dark:text-zinc-100">
+                            {hasRed ? 'Fact Contradictions & Unverified Claims' : 'Unverified Claim Notice'}
                           </span>
-                          <p className="leading-snug">{sentence.explanation}</p>
                         </div>
+                        <span
+                          className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-semibold ${
+                            hasRed
+                              ? 'bg-rose-500/15 text-rose-700 dark:text-rose-300'
+                              : 'bg-amber-500/15 text-amber-700 dark:text-amber-300'
+                          }`}
+                        >
+                          {flaggedItems.length} {flaggedItems.length === 1 ? 'claim' : 'claims'} flagged
+                        </span>
                       </div>
-                    );
-                  })}
-                </div>
+
+                      {/* Bulleted Points of Issues */}
+                      <div className="pt-2.5 space-y-2">
+                        {flaggedItems.map((sentence) => {
+                          const isRed = sentence.status === 'RED';
+                          const cleanSnippet = sentence.text
+                            .replace(/^[*•#-]\s*/, '')
+                            .replace(/\*\*/g, '')
+                            .slice(0, 65);
+
+                          return (
+                            <div
+                              key={`expl-${sentence.sentenceId}`}
+                              onClick={() => onSelectSentence(sentence)}
+                              className="flex items-start gap-2.5 p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer transition-colors group"
+                            >
+                              <span
+                                className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${
+                                  isRed ? 'bg-rose-500' : 'bg-amber-500'
+                                }`}
+                              />
+                              <div className="flex-1 leading-relaxed">
+                                <span className="font-semibold text-zinc-900 dark:text-zinc-100 mr-1.5">
+                                  &ldquo;{cleanSnippet}{sentence.text.length > 65 ? '...' : ''}&rdquo;
+                                </span>
+                                <span className="text-zinc-600 dark:text-zinc-300">
+                                  — {sentence.explanation}
+                                </span>
+                              </div>
+                              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap shrink-0 flex items-center gap-1 font-medium mt-0.5">
+                                Audit in side panel
+                                <ArrowRight className="w-3 h-3" />
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Footer Hint */}
+                      <div className="mt-2 pt-2 border-t border-zinc-200/40 dark:border-zinc-700/40 flex items-center justify-between text-[11px] text-zinc-400 dark:text-zinc-500">
+                        <span>Click any claim above to inspect matched source passages in the side panel.</span>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           </div>
