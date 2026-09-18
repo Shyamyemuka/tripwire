@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { DocumentMeta, RetrievalMode } from '@/lib/types';
-import { FileText, AlertTriangle, Zap, Database, RotateCcw, Sparkles } from 'lucide-react';
+import { FileText, AlertTriangle, Zap, Database, RotateCcw } from 'lucide-react';
 
 interface TopBarProps {
   documentMeta: DocumentMeta;
@@ -12,7 +12,6 @@ interface TopBarProps {
   totalClaimsVerified: number;
   avgRetrievalLatencyMs: number;
   onResetDocument: () => void;
-  onRunBenchmark?: () => void;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
@@ -23,7 +22,6 @@ export const TopBar: React.FC<TopBarProps> = ({
   totalClaimsVerified,
   avgRetrievalLatencyMs,
   onResetDocument,
-  onRunBenchmark,
 }) => {
   return (
     <header className="border-b border-zinc-200 dark:border-zinc-800 bg-white/80 dark:bg-zinc-950/80 backdrop-blur-md sticky top-0 z-30 px-4 py-2.5">
@@ -104,16 +102,6 @@ export const TopBar: React.FC<TopBarProps> = ({
               </div>
             </div>
 
-            {onRunBenchmark && (
-              <button
-                onClick={onRunBenchmark}
-                title="Run live hallucination test suite for judges"
-                className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 font-semibold text-[11px] hover:bg-emerald-500/20 transition-all shrink-0 ml-1"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-emerald-500" />
-                Judge Test
-              </button>
-            )}
           </div>
         </div>
       </div>
