@@ -448,6 +448,71 @@ export async function generateTextEmbedding(text: string): Promise<number[]> {
   }
 }
 
+
+/**
+ * Infallible PDF text extractor using Gemini Vision / Multimodal Document Processing.
+ * Works seamlessly in serverless (Vercel) environments where local binary/worker PDF parsers may fail.
+ */
+export async function extractPdfTextWithGemini(
+  buffer: Buffer
+): Promise<Array<{ pageNumber: number; text: string }>> {
+  const keys = getAvailableGeminiKeys();
+  if (keys.length === 0) {
+    throw new Error('No Gemini API key configured to parse PDF document.');
+  }
+
+  return await callGeminiWithFailover(async (client) => {
+    const base64Data = buffer.toString('base64');
+    const response = await client.models.generateContent({
+      model: GENERATION_MODEL,
+      contents: [
+        {
+          inlineData: {
+            mimeType: 'application/pdf',
+            data: base64Data,
+          },
+        },
+        'Transcribe all text from this PDF document page by page. For each page, start with a header like "--- PAGE 1 ---", "--- PAGE 2 ---", etc. Do NOT include summaries or markdown styling beyond the page markers. Return the verbatim text.'
+      ],
+      config: {
+        temperature: 0.0,
+      }
+    });
+
+    const text = response.text || '';
+    if (!text.trim()) {
+      throw new Error('PDF document returned empty text from Gemini.');
+    }
+
+    // Split text by page markers: "--- PAGE 1 ---" or similar
+    const splitRegex = /---+\s*PAGE\s+(\d+)\s*---+/i;
+    const parts = text.split(splitRegex);
+    const pages: Array<{ pageNumber: number; text: string }> = [];
+
+    if (parts.length > 1) {
+      for (let i = 1; i < parts.length; i += 2) {
+        const pageNum = parseInt(parts[i], 10) || (Math.floor(i / 2) + 1);
+        const pageContent = (parts[i + 1] || '').trim();
+        if (pageContent) {
+          pages.push({
+            pageNumber: pageNum,
+            text: pageContent,
+          });
+        }
+      }
+    }
+
+    if (pages.length === 0) {
+      pages.push({
+        pageNumber: 1,
+        text: text.trim(),
+      });
+    }
+
+    return pages;
+  });
+}
+
 function generateFallbackEmbedding(text: string, dim = 256): number[] {
   const vec = new Array(dim).fill(0);
   const words = text.toLowerCase().split(/\s+/);
