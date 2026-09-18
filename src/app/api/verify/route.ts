@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isTrivialClaim } from '@/lib/trivial-filter';
-import { queryMossRetrieval, getSessionChunks, indexDocumentInMoss } from '@/lib/moss';
+import { queryMossRetrieval, getSessionChunks, registerSessionChunks } from '@/lib/moss';
 import { queryBaselineCosine } from '@/lib/baseline';
 import { classifySentenceVerdict } from '@/lib/gemini';
 import { CandidatePassage, ChunkRecord } from '@/lib/types';
@@ -30,9 +30,9 @@ export async function POST(req: NextRequest) {
     let candidates: CandidatePassage[] = [];
     let retrievalLatencyMs = 0;
 
-    // Ensure chunks are available in memory registry if provided by client
+    // Ensure chunks are registered in memory registry if provided by client (fast 0ms registration)
     if (clientChunks && clientChunks.length > 0 && getSessionChunks(sessionId).length === 0) {
-      await indexDocumentInMoss(sessionId, clientChunks);
+      registerSessionChunks(sessionId, clientChunks);
     }
 
     // 2. Retrieval Step (FR-7 Moss vs FR-12 Baseline)

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { streamAnswerGeneration } from '@/lib/gemini';
+import { streamAnswerGeneration, parseFriendlyErrorMessage } from '@/lib/gemini';
 
 export async function POST(req: NextRequest) {
   try {
@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
           controller.close();
         } catch (err: unknown) {
           console.error('Streaming generation error:', err);
-          const message = err instanceof Error ? err.message : 'Generation failed.';
+          const message = parseFriendlyErrorMessage(err);
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: message })}\n\n`));
           controller.close();
         }

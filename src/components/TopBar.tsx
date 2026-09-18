@@ -1,8 +1,17 @@
-﻿"use client";
+"use client";
 
-import React from 'react';
-import { DocumentMeta, RetrievalMode } from '@/lib/types';
-import { FileText, AlertTriangle, Zap, Database, RotateCcw } from 'lucide-react';
+import React from "react";
+import { DocumentMeta, RetrievalMode } from "@/lib/types";
+import {
+  FileText,
+  AlertTriangle,
+  Zap,
+  Database,
+  RotateCcw,
+  ArrowLeft,
+  Clock,
+} from "lucide-react";
+import Link from "next/link";
 
 interface TopBarProps {
   documentMeta: DocumentMeta;
@@ -12,6 +21,8 @@ interface TopBarProps {
   totalClaimsVerified: number;
   avgRetrievalLatencyMs: number;
   onResetDocument: () => void;
+  onBackToLanding?: () => void;
+  onOpenHistory?: () => void;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
@@ -22,96 +33,134 @@ export const TopBar: React.FC<TopBarProps> = ({
   totalClaimsVerified,
   avgRetrievalLatencyMs,
   onResetDocument,
+  onBackToLanding,
+  onOpenHistory,
 }) => {
   return (
-    <header className="border-b border-zinc-200 dark:border-zinc-800 bg-white/80 dark:bg-zinc-950/80 backdrop-blur-md sticky top-0 z-30 px-4 py-2.5">
-      <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-3">
-        {/* Left: Document details and truncation warning */}
+    <header className="border-b border-white/10 bg-black/90 backdrop-blur-xl sticky top-0 z-40 px-4 sm:px-6 py-3 transition-colors">
+      <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-3">
+        {/* Left Side: Brand, Back, and Document Metadata */}
         <div className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-start">
-          <div className="flex items-center gap-2 text-xs text-zinc-700 dark:text-zinc-300">
-            <span className="font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5 text-sm">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-              Tripwire
-            </span>
-            <span className="text-zinc-300 dark:text-zinc-700">|</span>
-            <div className="flex items-center gap-1.5 font-medium truncate max-w-[180px] sm:max-w-[280px]">
-              <FileText className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
-              <span className="truncate">{documentMeta.filename}</span>
+          <div className="flex items-center gap-2.5">
+            {onBackToLanding ? (
+              <button
+                onClick={onBackToLanding}
+                className="p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-white/5 transition-colors"
+                title="Return to landing page"
+              >
+                <ArrowLeft className="w-4 h-4" />
+              </button>
+            ) : (
+              <Link
+                href="/"
+                className="p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-white/5 transition-colors"
+                title="Return to landing page"
+              >
+                <ArrowLeft className="w-4 h-4" />
+              </Link>
+            )}
+
+            <Link href="/" className="flex items-center gap-2">
+              <span className="font-medium text-sm sm:text-base tracking-[0.1em] text-white">
+                TRIPWIRE
+              </span>
+              <span className="w-1.5 h-1.5 rounded-full bg-white/70" />
+            </Link>
+
+            <span className="text-white/20 mx-0.5">|</span>
+
+            {/* Document badge */}
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white/[0.04] border border-white/10 text-xs text-neutral-300 max-w-[200px] sm:max-w-[320px]">
+              <FileText className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
+              <span className="truncate font-mono text-[11px] text-white">
+                {documentMeta.filename}
+              </span>
+              <span className="text-white/20">·</span>
+              <span className="text-[10px] text-neutral-400 shrink-0">
+                {documentMeta.pageCount} {documentMeta.pageCount === 1 ? "page" : "pages"}
+              </span>
             </div>
-            <span className="px-1.5 py-0.5 rounded-md bg-zinc-100 dark:bg-zinc-800 text-[10px] text-zinc-500">
-              {documentMeta.pageCount} {documentMeta.pageCount === 1 ? 'page' : 'pages'} · {documentMeta.wordCount} words
-            </span>
           </div>
 
+          {/* Reset document control */}
           <button
             onClick={onResetDocument}
             title="Upload a different document"
-            className="p-1.5 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+            className="p-1.5 text-neutral-400 hover:text-white rounded-md hover:bg-white/5 transition-colors flex items-center gap-1 text-xs"
           >
-            <RotateCcw className="w-3.5 h-3.5" />
+            <RotateCcw className="w-3.5 h-3.5 text-neutral-400" />
+            <span className="hidden sm:inline text-[11px] text-neutral-400">Change</span>
           </button>
+
+          {/* History drawer trigger */}
+          {onOpenHistory && (
+            <button
+              onClick={onOpenHistory}
+              title="Open saved sessions"
+              className="p-1.5 text-neutral-400 hover:text-white rounded-md hover:bg-white/5 transition-colors flex items-center gap-1.5 text-xs ml-1"
+            >
+              <Clock className="w-3.5 h-3.5 text-neutral-400" />
+              <span className="hidden sm:inline text-[11px] text-neutral-400">History</span>
+            </button>
+          )}
         </div>
 
-        {/* Center/Right: A/B Toggle & Measured Latency Counters */}
-        <div className="flex items-center gap-3 text-xs w-full md:w-auto justify-between md:justify-end">
-          {/* FR-12: A/B Latency Mode Toggle */}
-          <div className="flex items-center gap-1.5 bg-zinc-100 dark:bg-zinc-900 p-1 rounded-lg border border-zinc-200 dark:border-zinc-800">
+        {/* Center / Right Side: MOSS / BASELINE segmented pill toggle & Measured Latencies */}
+        <div className="flex items-center gap-4 text-xs w-full md:w-auto justify-between md:justify-end">
+          {/* MOSS / BASELINE Segmented Pill Toggle */}
+          <div className="flex items-center gap-1 bg-[#0A0A0A] p-1 rounded-full border border-white/10 shadow-inner">
             <button
-              onClick={() => onToggleMode('moss')}
-              className={`flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition-all ${
-                mode === 'moss'
-                  ? 'bg-emerald-500 text-white shadow-xs'
-                  : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200'
+              onClick={() => onToggleMode("moss")}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold transition-all ${
+                mode === "moss"
+                  ? "bg-white text-black shadow-xs"
+                  : "text-neutral-400 hover:text-white"
               }`}
             >
-              <Zap className="w-3 h-3" />
-              Moss (&lt;30ms)
+              <Zap className="w-3 h-3 fill-current" />
+              <span>MOSS</span>
             </button>
             <button
-              onClick={() => onToggleMode('baseline')}
-              className={`flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition-all ${
-                mode === 'baseline'
-                  ? 'bg-amber-600 text-white shadow-xs'
-                  : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200'
+              onClick={() => onToggleMode("baseline")}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold transition-all ${
+                mode === "baseline"
+                  ? "bg-white/20 text-white border border-white/20 shadow-xs"
+                  : "text-neutral-400 hover:text-white"
               }`}
             >
               <Database className="w-3 h-3" />
-              Baseline (Cosine)
+              <span>BASELINE</span>
             </button>
           </div>
 
-          {/* Real-time Measured Latency Readout & Speedup Advantage */}
-          <div className="flex items-center gap-2 border-l border-zinc-200 dark:border-zinc-800 pl-3">
+          {/* Real-time Measured Latency Readout */}
+          <div className="flex items-center gap-3 border-l border-white/10 pl-3">
             <div className="text-right">
-              <div className="text-[11px] font-mono font-semibold text-zinc-900 dark:text-zinc-100 flex items-center justify-end gap-1.5">
-                {lastRetrievalLatencyMs !== null ? (
-                  <>
-                    <span>{mode === 'moss' ? 'Moss' : 'Baseline'}: {lastRetrievalLatencyMs.toFixed(1)}ms</span>
-                    {mode === 'moss' && lastRetrievalLatencyMs < 30 && (
-                      <span className="px-1.5 py-0.2 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 text-[10px]">
-                        Sub-30ms
-                      </span>
-                    )}
-                  </>
-                ) : (
-                  'Ready'
-                )}
+              <div className="text-[11px] font-mono font-medium text-white flex items-center justify-end gap-1.5">
+                <span className={`w-1.5 h-1.5 rounded-full ${mode === 'moss' ? 'bg-white' : 'bg-neutral-400'}`} />
+                {lastRetrievalLatencyMs !== null
+                  ? `${mode === "moss" ? "Moss" : "Baseline"} retrieval: ${lastRetrievalLatencyMs.toFixed(1)}ms`
+                  : `${mode === "moss" ? "Moss" : "Baseline"} ready`}
               </div>
-              <div className="text-[10px] text-zinc-500">
+              <div className="text-[10px] text-neutral-400 font-mono">
                 verified {totalClaimsVerified} claims · avg {avgRetrievalLatencyMs.toFixed(1)}ms
               </div>
             </div>
-
           </div>
         </div>
       </div>
 
-      {/* FR-2 Truncation Banner */}
+      {/* FR-2 Persistent Truncation Warning */}
       {documentMeta.truncated && (
-        <div className="mt-2 py-1 px-2.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-400 text-[11px] flex items-center gap-2">
-          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-          <span>
-            <strong>Document truncated:</strong> {documentMeta.truncatedPageRange || 'Only first 20 pages / 8,000 words indexed.'}
+        <div className="mt-2 py-1.5 px-3 rounded-lg bg-amber-950/20 border border-amber-500/25 text-amber-300 text-xs flex items-center justify-between max-w-7xl mx-auto">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-400" />
+            <span>
+              <strong>Document truncated:</strong> {documentMeta.truncatedPageRange || "Only pages 1–20 / 8,000 words indexed."}
+            </span>
+          </div>
+          <span className="text-[10px] uppercase tracking-wider font-mono opacity-80">
+            Session Warning
           </span>
         </div>
       )}

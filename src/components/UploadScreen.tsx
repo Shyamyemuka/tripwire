@@ -1,9 +1,18 @@
-﻿"use client";
+"use client";
 
-import React, { useState, useRef } from 'react';
-import { Upload, FileText, AlertCircle, Sparkles, ArrowRight } from 'lucide-react';
-import { SAMPLE_DOCUMENT_TITLE, SAMPLE_DOCUMENT_TEXT } from '@/lib/sample-doc';
-import { ChunkRecord, DocumentMeta } from '@/lib/types';
+import React, { useState, useRef } from "react";
+import {
+  UploadCloud,
+  FileText,
+  AlertCircle,
+  Sparkles,
+  ArrowRight,
+  ArrowLeft,
+  Loader2,
+  Clock,
+} from "lucide-react";
+import { SAMPLE_DOCUMENT_TITLE, SAMPLE_DOCUMENT_TEXT } from "@/lib/sample-doc";
+import { ChunkRecord, DocumentMeta } from "@/lib/types";
 
 interface UploadScreenProps {
   onDocumentLoaded: (data: {
@@ -12,71 +21,95 @@ interface UploadScreenProps {
     chunks: ChunkRecord[];
     documentFullText: string;
   }) => void;
+  onBackToLanding?: () => void;
+  onOpenHistory?: () => void;
 }
 
-export const UploadScreen: React.FC<UploadScreenProps> = ({ onDocumentLoaded }) => {
-  const [mode, setMode] = useState<'upload' | 'paste'>('upload');
-  const [pastedText, setPastedText] = useState('');
+type IndexingStep = "idle" | "reading" | "splitting" | "indexing" | "ready";
+
+export const UploadScreen: React.FC<UploadScreenProps> = ({
+  onDocumentLoaded,
+  onBackToLanding,
+  onOpenHistory,
+}) => {
+  const [tabMode, setTabMode] = useState<"upload" | "paste">("upload");
+  const [pastedText, setPastedText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [indexingStep, setIndexingStep] = useState<IndexingStep>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleProcessFile = async (file: File) => {
+  const simulateStepProgress = async (fn: () => Promise<void>) => {
     setIsLoading(true);
-    setErrorMessage(null);
-
-    const formData = new FormData();
-    formData.append('file', file);
+    setIndexingStep("reading");
+    const t1 = setTimeout(() => setIndexingStep("splitting"), 350);
+    const t2 = setTimeout(() => setIndexingStep("indexing"), 700);
 
     try {
-      const res = await fetch('/api/session', {
-        method: 'POST',
+      await fn();
+      setIndexingStep("ready");
+    } finally {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      setIsLoading(false);
+    }
+  };
+
+  const handleProcessFile = async (file: File) => {
+    setErrorMessage(null);
+
+    await simulateStepProgress(async () => {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await fetch("/api/session", {
+        method: "POST",
         body: formData,
       });
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || 'Failed to process file');
+        throw new Error(data.error || "Failed to process document file.");
       }
 
       onDocumentLoaded(data);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error processing document';
+    }).catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : "Error processing document file.";
       setErrorMessage(msg);
-    } finally {
-      setIsLoading(false);
-    }
+      setIndexingStep("idle");
+    });
   };
 
-  const handleProcessPastedText = async (text: string, title = 'pasted-document.txt') => {
+  const handleProcessPastedText = async (
+    text: string,
+    title = "pasted-document.txt"
+  ) => {
     if (!text.trim()) {
-      setErrorMessage('Please paste document text before proceeding.');
+      setErrorMessage("Please paste or provide document text before proceeding.");
       return;
     }
 
-    setIsLoading(true);
     setErrorMessage(null);
 
-    try {
-      const res = await fetch('/api/session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+    await simulateStepProgress(async () => {
+      const res = await fetch("/api/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text, filename: title }),
       });
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || 'Failed to process text');
+        throw new Error(data.error || "Failed to process pasted text.");
       }
 
       onDocumentLoaded(data);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error processing text';
+    }).catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : "Error processing pasted text.";
       setErrorMessage(msg);
-    } finally {
-      setIsLoading(false);
-    }
+      setIndexingStep("idle");
+    });
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -89,117 +122,222 @@ export const UploadScreen: React.FC<UploadScreenProps> = ({ onDocumentLoaded }) 
   };
 
   return (
-    <div className="flex-1 flex flex-col items-center justify-center p-6 max-w-2xl mx-auto w-full">
-      <div className="text-center mb-8">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-semibold mb-3 border border-emerald-500/20">
-          <Sparkles className="w-3.5 h-3.5" />
-          Moss Sub-10ms Fast Verification
+    <div className="relative min-h-screen w-full flex flex-col justify-between p-4 sm:p-8 md:p-12 bg-[#000000] text-white selection:bg-white/20 selection:text-white">
+      {/* Top Header */}
+      <div className="relative z-10 max-w-3xl mx-auto w-full flex items-center justify-between pt-2 pb-6">
+        <div className="flex items-center gap-2">
+          {onBackToLanding && (
+            <button
+              onClick={onBackToLanding}
+              className="p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-white/5 transition-colors mr-1"
+              title="Return to landing page"
+            >
+              <ArrowLeft className="w-4 h-4" />
+            </button>
+          )}
+          <span className="font-medium text-base sm:text-lg tracking-[0.1em] text-white font-sans">
+            TRIPWIRE
+          </span>
+          <span className="w-1.5 h-1.5 rounded-full bg-white/70" />
         </div>
-        <h1 className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100 sm:text-4xl">
-          Tripwire
-        </h1>
-        <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400 max-w-md mx-auto">
-          Inline, sentence-level hallucination detection for streaming LLM outputs. Fact-checked against source material as it generates.
-        </p>
-      </div>
 
-      {/* Mode switcher tabs */}
-      <div className="flex w-full bg-zinc-100 dark:bg-zinc-800/60 p-1 rounded-xl mb-4 border border-zinc-200 dark:border-zinc-700/50">
-        <button
-          onClick={() => setMode('upload')}
-          className={`flex-1 flex items-center justify-center gap-2 py-2 text-xs font-medium rounded-lg transition-all ${
-            mode === 'upload'
-              ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-xs'
-              : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100'
-          }`}
-        >
-          <Upload className="w-3.5 h-3.5" />
-          Upload Document (PDF / TXT)
-        </button>
-        <button
-          onClick={() => setMode('paste')}
-          className={`flex-1 flex items-center justify-center gap-2 py-2 text-xs font-medium rounded-lg transition-all ${
-            mode === 'paste'
-              ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-xs'
-              : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100'
-          }`}
-        >
-          <FileText className="w-3.5 h-3.5" />
-          Paste Plain Text
-        </button>
-      </div>
+        <div className="flex items-center gap-2">
+          {onOpenHistory && (
+            <button
+              onClick={onOpenHistory}
+              className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-[11px] font-mono text-neutral-300 hover:text-white transition-all"
+            >
+              <Clock className="w-3.5 h-3.5 text-[#38BDF8]" />
+              <span>History</span>
+            </button>
+          )}
 
-      {errorMessage && (
-        <div className="w-full mb-4 p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-400 text-xs flex items-start gap-2.5">
-          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-          <span>{errorMessage}</span>
-        </div>
-      )}
-
-      {mode === 'upload' ? (
-        <div
-          onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
-          onDragLeave={() => setIsDragOver(false)}
-          onDrop={handleDrop}
-          onClick={() => fileInputRef.current?.click()}
-          className={`w-full border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all flex flex-col items-center justify-center min-h-[220px] ${
-            isDragOver
-              ? 'border-emerald-500 bg-emerald-500/5'
-              : 'border-zinc-300 dark:border-zinc-700 hover:border-zinc-400 dark:hover:border-zinc-600 bg-zinc-50/50 dark:bg-zinc-900/30'
-          }`}
-        >
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".pdf,.txt,.md"
-            className="hidden"
-            onChange={(e) => {
-              if (e.target.files && e.target.files[0]) {
-                handleProcessFile(e.target.files[0]);
-              }
-            }}
-          />
-          <div className="w-12 h-12 rounded-full bg-zinc-200/80 dark:bg-zinc-800 flex items-center justify-center text-zinc-600 dark:text-zinc-400 mb-3">
-            <Upload className="w-5 h-5" />
+          <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-white/[0.04] border border-white/10 text-[11px] font-mono text-neutral-400">
+            <span className="w-1.5 h-1.5 rounded-full bg-white/80" />
+            <span>MOSS READY</span>
           </div>
-          <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
-            {isLoading ? 'Indexing document into Moss...' : 'Drop your document here, or click to browse'}
-          </p>
-          <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
-            Supports PDF, TXT (up to 20 pages / ~8,000 words)
-          </p>
         </div>
-      ) : (
-        <div className="w-full flex flex-col gap-3">
-          <textarea
-            value={pastedText}
-            onChange={(e) => setPastedText(e.target.value)}
-            placeholder="Paste your source document content here (e.g. quarterly report, legal agreement, technical spec)..."
-            rows={8}
-            className="w-full p-4 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-sm font-mono text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
-          />
-          <button
-            disabled={isLoading || !pastedText.trim()}
-            onClick={() => handleProcessPastedText(pastedText)}
-            className="w-full py-2.5 px-4 rounded-xl bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 text-sm font-medium hover:bg-zinc-800 dark:hover:bg-zinc-200 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
-          >
-            {isLoading ? 'Indexing document...' : 'Index Text & Start Verification'}
-            <ArrowRight className="w-4 h-4" />
-          </button>
-        </div>
-      )}
+      </div>
 
-      {/* One-click demo document button */}
-      <div className="mt-6 pt-6 border-t border-zinc-200 dark:border-zinc-800 w-full flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-zinc-500">
-        <span>No file on hand? Test the reference demo:</span>
-        <button
-          onClick={() => handleProcessPastedText(SAMPLE_DOCUMENT_TEXT, SAMPLE_DOCUMENT_TITLE)}
-          disabled={isLoading}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all font-medium"
-        >
-          <Sparkles className="w-3.5 h-3.5 text-emerald-500" />
-          Load Sample Q3 Financial Report
-        </button>
+      {/* Centered Workspace Card */}
+      <div className="relative z-10 flex-1 flex flex-col items-center justify-center max-w-xl mx-auto w-full">
+        <div className="w-full bg-[#080808] rounded-2xl p-6 sm:p-8 border border-white/10 shadow-[0_20px_60px_rgba(0,0,0,0.8)]">
+          {/* Eyebrow and Headline */}
+          <div className="text-center mb-6">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/[0.05] text-neutral-300 text-[10px] font-mono tracking-wider uppercase mb-3 border border-white/10">
+              DOCUMENT INTAKE
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-medium tracking-tight text-white">
+              Give Tripwire something to verify.
+            </h1>
+            <p className="mt-2 text-xs sm:text-sm text-neutral-400 leading-relaxed max-w-md mx-auto">
+              Upload a document or paste its text, then ask a question. Tripwire verifies the answer sentence by sentence as it streams.
+            </p>
+          </div>
+
+          {/* Mode Tabs */}
+          <div className="flex w-full bg-black p-1 rounded-xl mb-5 border border-white/10">
+            <button
+              onClick={() => {
+                setTabMode("upload");
+                setErrorMessage(null);
+              }}
+              className={`flex-1 flex items-center justify-center gap-2 py-2 text-xs font-medium rounded-lg transition-all ${
+                tabMode === "upload"
+                  ? "bg-white/10 text-white shadow-xs border border-white/15"
+                  : "text-neutral-400 hover:text-white"
+              }`}
+            >
+              <UploadCloud className="w-3.5 h-3.5 text-white/80" />
+              <span>Upload PDF</span>
+            </button>
+            <button
+              onClick={() => {
+                setTabMode("paste");
+                setErrorMessage(null);
+              }}
+              className={`flex-1 flex items-center justify-center gap-2 py-2 text-xs font-medium rounded-lg transition-all ${
+                tabMode === "paste"
+                  ? "bg-white/10 text-white shadow-xs border border-white/15"
+                  : "text-neutral-400 hover:text-white"
+              }`}
+            >
+              <FileText className="w-3.5 h-3.5 text-white/80" />
+              <span>Paste text instead</span>
+            </button>
+          </div>
+
+          {/* Error Banner */}
+          {errorMessage && (
+            <div className="w-full mb-4 p-3 rounded-xl bg-rose-950/20 border border-rose-500/20 text-rose-300 text-xs flex items-start gap-2.5">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-400" />
+              <span>{errorMessage}</span>
+            </div>
+          )}
+
+          {/* Indexing Progress Indicator */}
+          {isLoading && (
+            <div className="mb-6 p-4 rounded-xl bg-white/[0.02] border border-white/10 space-y-3">
+              <div className="flex items-center justify-between text-xs font-mono text-white">
+                <span className="flex items-center gap-2">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
+                  <span>Processing document...</span>
+                </span>
+                <span className="text-[10px] text-neutral-400">Moss Engine</span>
+              </div>
+
+              {/* 4-step pipeline bar */}
+              <div className="grid grid-cols-4 gap-1.5 pt-1 text-[10px] font-mono">
+                {[
+                  { id: "reading", label: "Reading" },
+                  { id: "splitting", label: "Splitting" },
+                  { id: "indexing", label: "Indexing" },
+                  { id: "ready", label: "Ready" },
+                ].map((step, sIdx) => {
+                  const stepIndex = ["reading", "splitting", "indexing", "ready"].indexOf(indexingStep);
+                  const isDone = stepIndex > sIdx;
+                  const isCurrent = stepIndex === sIdx;
+
+                  return (
+                    <div
+                      key={step.id}
+                      className={`p-1.5 rounded-md border text-center transition-all ${
+                        isCurrent
+                          ? "bg-white/20 border-white/40 text-white font-semibold"
+                          : isDone
+                          ? "bg-white/[0.08] border-white/20 text-white/80"
+                          : "bg-white/[0.02] border-white/[0.06] text-neutral-500"
+                      }`}
+                    >
+                      {step.label}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Tab 1: Upload PDF */}
+          {tabMode === "upload" && !isLoading && (
+            <div
+              onDragOver={(e) => {
+                e.preventDefault();
+                setIsDragOver(true);
+              }}
+              onDragLeave={() => setIsDragOver(false)}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+              className={`w-full border rounded-2xl p-8 text-center cursor-pointer transition-all flex flex-col items-center justify-center min-h-[210px] group ${
+                isDragOver
+                  ? "border-white/60 bg-white/[0.05]"
+                  : "border-dashed border-white/20 hover:border-white/40 hover:bg-white/[0.02] bg-black/40"
+              }`}
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf,.txt,.md"
+                className="hidden"
+                onChange={(e) => {
+                  if (e.target.files && e.target.files[0]) {
+                    handleProcessFile(e.target.files[0]);
+                  }
+                }}
+              />
+              <div className="w-12 h-12 rounded-full bg-white/[0.04] border border-white/10 flex items-center justify-center text-neutral-400 group-hover:text-white group-hover:border-white/30 transition-all mb-3">
+                <UploadCloud className="w-5 h-5" />
+              </div>
+              <p className="text-sm font-medium text-white">
+                Drop a PDF here
+              </p>
+              <p className="text-xs text-neutral-400 mt-1">
+                or browse from your device
+              </p>
+              <span className="text-[10px] text-neutral-500 mt-2 font-mono">
+                Supports PDF, TXT (up to 20 pages / ~8,000 words)
+              </span>
+            </div>
+          )}
+
+          {/* Tab 2: Paste Text */}
+          {tabMode === "paste" && !isLoading && (
+            <div className="w-full flex flex-col gap-3">
+              <textarea
+                value={pastedText}
+                onChange={(e) => setPastedText(e.target.value)}
+                placeholder="Paste source material here (e.g. quarterly earnings report, legal contract, clinical study, product spec)..."
+                rows={7}
+                className="w-full p-3.5 rounded-xl border border-white/10 bg-black text-xs sm:text-sm font-mono text-white placeholder-neutral-500 focus:outline-hidden focus:border-white/30 transition-all resize-none"
+              />
+              <button
+                disabled={isLoading || !pastedText.trim()}
+                onClick={() => handleProcessPastedText(pastedText)}
+                className="w-full py-3 px-4 rounded-xl bg-white text-black text-xs font-semibold hover:bg-neutral-200 disabled:opacity-40 transition-all flex items-center justify-center gap-2 tactile-btn shadow-md"
+              >
+                <span>Continue &amp; Start Verification</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
+          {/* One-Click Sample Document Demo Option */}
+          <div className="mt-6 pt-5 border-t border-white/[0.08] flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-neutral-400">
+            <span className="text-[11px] text-neutral-500">No PDF on hand? Test the reference demo:</span>
+            <button
+              onClick={() => handleProcessPastedText(SAMPLE_DOCUMENT_TEXT, SAMPLE_DOCUMENT_TITLE)}
+              disabled={isLoading}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/10 bg-white/[0.04] text-white hover:bg-white/[0.08] hover:border-white/20 transition-all text-xs font-medium tactile-btn"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-white/80" />
+              <span>Load Sample Q3 Financial Report</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Footer System Status */}
+      <div className="relative z-10 max-w-3xl mx-auto w-full pt-6 pb-2 text-center text-[11px] text-neutral-500 font-mono">
+        <span>Tripwire Verification Pipeline · Sub-10ms Moss Vector Search · NLI Classifier</span>
       </div>
     </div>
   );

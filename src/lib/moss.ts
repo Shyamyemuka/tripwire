@@ -25,6 +25,15 @@ function getMossClient(): MossClient | null {
   }
 }
 
+export function registerSessionChunks(
+  sessionId: string,
+  chunks: ChunkRecord[]
+): void {
+  const chunkMap = new Map<string, ChunkRecord>();
+  chunks.forEach(c => chunkMap.set(c.chunkId, c));
+  sessionChunkRegistry.set(sessionId, chunkMap);
+}
+
 /**
  * FR-2: Index document chunks into Moss
  */
@@ -33,9 +42,7 @@ export async function indexDocumentInMoss(
   chunks: ChunkRecord[]
 ): Promise<void> {
   // Store chunk metadata map for fast lookups
-  const chunkMap = new Map<string, ChunkRecord>();
-  chunks.forEach(c => chunkMap.set(c.chunkId, c));
-  sessionChunkRegistry.set(sessionId, chunkMap);
+  registerSessionChunks(sessionId, chunks);
 
   const client = getMossClient();
   if (!client) {

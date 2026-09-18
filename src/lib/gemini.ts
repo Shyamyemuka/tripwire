@@ -17,6 +17,32 @@ let activeKeyIndex = 0;
  * If the active key hits an error (rate limit, quota exceeded, 429, timeout, etc.),
  * it switches to the next configured key and remembers it for subsequent calls.
  */
+export function parseFriendlyErrorMessage(err: unknown): string {
+  if (!err) return "An unexpected error occurred.";
+  let raw = err instanceof Error ? err.message : String(err);
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed?.error?.message) {
+      raw = parsed.error.message;
+    }
+  } catch {
+    // raw is not JSON
+  }
+
+  if (raw.includes("503") || raw.includes("high demand") || raw.includes("UNAVAILABLE")) {
+    return "The AI model is experiencing a temporary demand spike. Please try again in a moment.";
+  }
+  if (raw.includes("429") || raw.includes("RESOURCE_EXHAUSTED") || raw.includes("quota")) {
+    return "Rate limit reached. Please wait a few seconds and try again.";
+  }
+  return raw;
+}
+
+/**
+ * Executes a Gemini API call with automatic multi-key failover and backoff for 503/429.
+ * If the active key hits an error (rate limit, quota exceeded, 429, 503 timeout, etc.),
+ * it switches to the next configured key and remembers it for subsequent calls.
+ */
 async function callGeminiWithFailover<T>(
   operation: (client: GoogleGenAI, keyIndex: number) => Promise<T>
 ): Promise<T> {
@@ -26,7 +52,10 @@ async function callGeminiWithFailover<T>(
   }
 
   let lastError: unknown;
-  for (let attempt = 0; attempt < keys.length; attempt++) {
+  // Try across keys, with up to 2 passes if encountering temporary 503 spikes
+  const totalAttempts = Math.min(keys.length * 2, 4);
+
+  for (let attempt = 0; attempt < totalAttempts; attempt++) {
     const keyIdx = (activeKeyIndex + attempt) % keys.length;
     const client = new GoogleGenAI({ apiKey: keys[keyIdx] });
 
@@ -40,7 +69,10 @@ async function callGeminiWithFailover<T>(
     } catch (err: unknown) {
       lastError = err;
       const msg = err instanceof Error ? err.message : String(err);
-      console.warn(`[Gemini Failover] Key #${keyIdx + 1} failed: ${msg}. Trying next key...`);
+      console.warn(`[Gemini Failover] Key #${keyIdx + 1} attempt ${attempt + 1} failed: ${msg}. Trying next...`);
+      if (attempt < totalAttempts - 1) {
+        await new Promise(r => setTimeout(r, 400));
+      }
     }
   }
 
@@ -53,7 +85,7 @@ export const EXPLANATION_MODEL = process.env.GEMINI_EXPLANATION_MODEL || 'gemini
 export const EMBEDDING_MODEL = process.env.GEMINI_EMBEDDING_MODEL || 'gemini-embedding-2';
 
 /**
- * FR-4: Whole-document stuffed streaming generation with multi-key failover
+ * FR-4: Whole-document stuffed streaming generation with multi-key and model failover
  */
 export async function* streamAnswerGeneration(
   question: string,
@@ -77,40 +109,69 @@ USER QUESTION: ${question}
 
 Provide a comprehensive, factual answer based on the document above.`;
 
-  let stream = null;
-  let lastError: unknown;
+  // Candidate models: primary generation model, fallback to verdict model if 503 high demand spike occurs
+  const candidateModels = [
+    GENERATION_MODEL,
+    VERDICT_MODEL !== GENERATION_MODEL ? VERDICT_MODEL : null
+  ].filter((m): m is string => Boolean(m));
 
-  for (let attempt = 0; attempt < keys.length; attempt++) {
-    const keyIdx = (activeKeyIndex + attempt) % keys.length;
-    const client = new GoogleGenAI({ apiKey: keys[keyIdx] });
-    try {
-      stream = await client.models.generateContentStream({
-        model: GENERATION_MODEL,
-        contents: prompt,
-        config: {
-          systemInstruction,
-          temperature: 0.2,
+  let activeIterator: AsyncIterator<{ text?: string }> | null = null;
+  let firstChunkText: string | null = null;
+  let lastError: unknown = null;
+
+  modelLoop:
+  for (const model of candidateModels) {
+    for (let attempt = 0; attempt < keys.length; attempt++) {
+      const keyIdx = (activeKeyIndex + attempt) % keys.length;
+      const client = new GoogleGenAI({ apiKey: keys[keyIdx] });
+      try {
+        const stream = await client.models.generateContentStream({
+          model,
+          contents: prompt,
+          config: {
+            systemInstruction,
+            temperature: 0.2,
+          }
+        });
+
+        // Test the stream by consuming the first chunk.
+        // Google GenAI throws 503/429 during iterator.next(), not during generateContentStream().
+        const iterator = stream[Symbol.asyncIterator]();
+        const firstResult = await iterator.next();
+
+        if (!firstResult.done && firstResult.value?.text) {
+          firstChunkText = firstResult.value.text;
         }
-      });
-      if (activeKeyIndex !== keyIdx) {
-        console.log(`[Gemini Failover] Generation stream active on key #${keyIdx + 1}`);
-        activeKeyIndex = keyIdx;
+
+        activeIterator = iterator;
+        if (activeKeyIndex !== keyIdx) {
+          console.log(`[Gemini Failover] Generation stream active on key #${keyIdx + 1} (${model})`);
+          activeKeyIndex = keyIdx;
+        }
+        break modelLoop;
+      } catch (err) {
+        lastError = err;
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`[Gemini Failover] Stream start failed with ${model} on key #${keyIdx + 1}: ${msg}. Trying next option...`);
+        await new Promise(r => setTimeout(r, 400));
       }
-      break;
-    } catch (err) {
-      lastError = err;
-      const msg = err instanceof Error ? err.message : String(err);
-      console.warn(`[Gemini Failover] Stream start failed on key #${keyIdx + 1}: ${msg}. Trying next key...`);
     }
   }
 
-  if (!stream) {
-    throw (lastError instanceof Error ? lastError : new Error('All configured Gemini API keys failed to generate stream.'));
+  if (!activeIterator) {
+    const cleanMsg = parseFriendlyErrorMessage(lastError);
+    throw new Error(cleanMsg);
   }
 
-  for await (const chunk of stream) {
-    if (chunk.text) {
-      yield chunk.text;
+  if (firstChunkText) {
+    yield firstChunkText;
+  }
+
+  while (true) {
+    const { done, value } = await activeIterator.next();
+    if (done) break;
+    if (value?.text) {
+      yield value.text;
     }
   }
 }

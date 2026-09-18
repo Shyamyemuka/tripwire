@@ -1,26 +1,233 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg: #000000;
+  --bg-deep: #000000;
+  --surface: #080808;
+  --surface-elevated: #141210;
+  --surface-hover: #1E1A16;
+
+  --text-primary: #FFFFFF;
+  --text-secondary: #D4CDC5;
+  --text-muted: #8A8177;
+
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.16);
+
+  --accent: #FFFFFF;
+  --accent-soft: rgba(255, 255, 255, 0.08);
+  --accent-border: rgba(255, 255, 255, 0.22);
+  --accent-warm: #A6927E;
+
+  --supported: #22C55E;
+  --supported-soft: rgba(34, 197, 94, 0.10);
+
+  --contradicted: #EF4444;
+  --contradicted-soft: rgba(239, 68, 68, 0.10);
+
+  --unverifiable: #F59E0B;
+  --unverifiable-soft: rgba(245, 158, 11, 0.10);
+
+  --neutral: #8A8177;
+  --neutral-soft: rgba(138, 129, 119, 0.10);
+
+  --white: #FFFFFF;
+  --black: #000000;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-manrope), "Manrope", system-ui, sans-serif;
+  --color-bg: var(--bg);
+  --color-bg-deep: var(--bg-deep);
+  --color-surface: var(--surface);
+  --color-surface-elevated: var(--surface-elevated);
+  --color-surface-hover: var(--surface-hover);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-border: var(--accent-border);
+  --color-accent-warm: var(--accent-warm);
+  --color-supported: var(--supported);
+  --color-supported-soft: var(--supported-soft);
+  --color-contradicted: var(--contradicted);
+  --color-contradicted-soft: var(--contradicted-soft);
+  --color-unverifiable: var(--unverifiable);
+  --color-unverifiable-soft: var(--unverifiable-soft);
+  --color-neutral: var(--neutral);
+  --color-neutral-soft: var(--neutral-soft);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+html,
+body {
+  background: var(--bg);
+  color: var(--text-primary);
+  font-family: var(--font-manrope), "Manrope", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: geometricPrecision;
+}
+
+/* Liquid Glass System */
+.liquid-glass {
+  background: rgba(255, 255, 255, 0.018);
+  background-blend-mode: luminosity;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.08);
+  position: relative;
+  overflow: hidden;
+}
+
+.liquid-glass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.28) 0%,
+    rgba(255, 255, 255, 0.10) 20%,
+    rgba(255, 255, 255, 0) 42%,
+    rgba(255, 255, 255, 0) 60%,
+    rgba(255, 255, 255, 0.08) 80%,
+    rgba(255, 255, 255, 0.20) 100%
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+/* Background Cinematic Video */
+.background-video {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  pointer-events: none;
+  user-select: none;
+  filter: brightness(0.72) contrast(1.08) saturate(0.72);
+  transform: scale(1.015);
+}
+
+/* Atmospheric Bottom Blur */
+.bottom-blur {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  mask-image: linear-gradient(to top, black 0%, transparent 45%);
+  -webkit-mask-image: linear-gradient(to top, black 0%, transparent 45%);
+}
+
+/* Cinematic Vignette */
+.hero-vignette {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse at 50% 45%,
+    transparent 30%,
+    rgba(0, 0, 0, 0.32) 100%
+  );
+  opacity: 0.7;
+}
+
+/* Global Motion Language */
+@keyframes blurFadeUp {
+  from {
+    opacity: 0;
+    filter: blur(20px);
+    transform: translateY(40px);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateY(0);
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+.animate-blur-fade-up {
+  animation: blurFadeUp 0.9s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  opacity: 0;
+}
+
+/* Stagger Delays */
+.delay-0 { animation-delay: 0ms; }
+.delay-100 { animation-delay: 100ms; }
+.delay-200 { animation-delay: 200ms; }
+.delay-250 { animation-delay: 250ms; }
+.delay-300 { animation-delay: 300ms; }
+.delay-350 { animation-delay: 350ms; }
+.delay-500 { animation-delay: 500ms; }
+.delay-650 { animation-delay: 650ms; }
+.delay-750 { animation-delay: 750ms; }
+.delay-900 { animation-delay: 900ms; }
+
+/* Subtle pulse for minimal dot */
+@keyframes subtlePulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.92); }
+}
+
+.animate-subtle-pulse {
+  animation: subtlePulse 3.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Tactile Micro-Interactions */
+.tactile-btn {
+  transition: transform 180ms ease, background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+.tactile-btn:hover {
+  transform: translateY(-1.5px);
+}
+.tactile-btn:active {
+  transform: translateY(0px);
+}
+
+/* Scrollbars */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.24);
+}
+
+/* Accessibility: Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+  .animate-blur-fade-up {
+    animation: none !important;
+    opacity: 1 !important;
+    filter: none !important;
+    transform: none !important;
+  }
+  .animate-cyan-pulse {
+    animation: none !important;
+    opacity: 1 !important;
+  }
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

@@ -1,20 +1,18 @@
-﻿import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import type { Metadata } from "next";
+import { Manrope } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const manrope = Manrope({
+  variable: "--font-manrope",
   subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
 });
 
 export const metadata: Metadata = {
-  title: "Tripwire — Real-Time Hallucination Detection",
-  description: "Real-time, sentence-level hallucination detection for streaming LLM outputs using Moss sub-10ms retrieval.",
+  title: "Tripwire — Real-Time AI Hallucination Detection",
+  description:
+    "Tripwire sits between a streaming LLM response and the user, verifying individual factual claims against source material in real time using sub-10ms retrieval.",
 };
 
 export default function RootLayout({
@@ -26,9 +24,12 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${manrope.variable} h-full antialiased dark`}
     >
-      <body className="min-h-full flex flex-col" suppressHydrationWarning>
+      <body
+        className="min-h-full flex flex-col bg-[#05070A] text-[#F5F7FA] font-sans overflow-x-hidden selection:bg-[#38BDF8]/20 selection:text-[#38BDF8]"
+        suppressHydrationWarning
+      >
         {children}
       </body>
     </html>
