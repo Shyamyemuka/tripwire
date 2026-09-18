@@ -1,7 +1,7 @@
-import type { NextConfig } from "next";
+﻿import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  serverExternalPackages: ["@moss-dev/moss", "@moss-dev/moss-core", "pdf-parse"],
 };
 
 export default nextConfig;

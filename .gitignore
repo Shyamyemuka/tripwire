@@ -10,6 +10,13 @@
 !.yarn/releases
 !.yarn/versions
 
+# Docs
+/docs
+/skills
+/.claude
+CLAUDE.md
+
+
 # testing
 /coverage
 
@@ -25,6 +32,7 @@
 *.pem
 
 # debug
+*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -35,6 +43,12 @@ yarn-error.log*
 
 # vercel
 .vercel
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
+*.swp
 
 # typescript
 *.tsbuildinfo
