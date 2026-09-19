@@ -10,7 +10,11 @@
   },
   "dependencies": {
     "@google/genai": "^2.23.0",
+    "@livekit/components-react": "^2.9.24",
+    "@livekit/rtc-node": "^0.13.35",
     "@moss-dev/moss": "^1.7.1",
+    "@upstash/redis": "^1.38.4",
+    "livekit-server-sdk": "^2.19.0",
     "lucide-react": "^1.47.0",
     "next": "16.3.5",
     "pdf-parse": "^2.4.5",

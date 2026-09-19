@@ -103,7 +103,9 @@ const MOSS_RETRY_INTERVAL_MS = 60_000;
 export async function queryMossRetrieval(
   sessionId: string,
   sentenceText: string,
-  topK = 3
+  topK = 3,
+  turnId?: string,
+  sentenceId?: string
 ): Promise<{ candidates: CandidatePassage[]; timeTakenInMs: number }> {
   const chunkMap = sessionChunkRegistry.get(sessionId) || new Map<string, ChunkRecord>();
   const client = getMossClient();
@@ -134,6 +136,19 @@ export async function queryMossRetrieval(
           similarityScore: Number(Number(doc.score || 0).toFixed(4))
         };
       });
+
+      if (turnId) {
+        console.log(JSON.stringify({
+          traceId: turnId,
+          spanName: "moss_retrieval_cloud",
+          sentenceId: sentenceId || "unknown",
+          durationMs: elapsed,
+          tokensIn: Math.round(sentenceText.length / 4),
+          tokensOut: candidates.length, // Log number of returned docs instead of text length to keep it clean
+          promptHash: "moss_query",
+          timestamp: new Date().toISOString()
+        }));
+      }
 
       return {
         candidates,
@@ -175,6 +190,19 @@ export async function queryMossRetrieval(
     charOffsetEnd: m.chunk.charOffsetEnd,
     similarityScore: Number(m.score.toFixed(4))
   }));
+
+  if (turnId) {
+    console.log(JSON.stringify({
+      traceId: turnId,
+      spanName: "moss_retrieval_local_fallback",
+      sentenceId: sentenceId || "unknown",
+      durationMs: elapsed,
+      tokensIn: Math.round(sentenceText.length / 4),
+      tokensOut: candidates.length,
+      promptHash: "moss_local_scan",
+      timestamp: new Date().toISOString()
+    }));
+  }
 
   return {
     candidates,
