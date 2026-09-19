@@ -7,7 +7,7 @@ import { CandidatePassage, ChunkRecord } from '@/lib/types';
 
 export async function POST(req: NextRequest) {
   try {
-    const { sentence, sessionId, mode = 'moss', chunks: clientChunks } = await req.json();
+    const { sentence, sessionId, mode = 'moss', chunks: clientChunks, turnId, sentenceId } = await req.json();
 
     if (!sentence || !sentence.trim()) {
       return NextResponse.json({ error: 'Sentence cannot be empty.' }, { status: 400 });
@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
       candidates = baselineResult.candidates;
       retrievalLatencyMs = baselineResult.timeTakenInMs;
     } else {
-      const mossResult = await queryMossRetrieval(sessionId, sentence, 3);
+      const mossResult = await queryMossRetrieval(sessionId, sentence, 3, turnId, sentenceId);
       candidates = mossResult.candidates;
       retrievalLatencyMs = mossResult.timeTakenInMs;
     }
@@ -64,11 +64,21 @@ export async function POST(req: NextRequest) {
 
     // 3. Verdict Classification (FR-8: Similarity is Not Truth)
     const tVerdictStart = performance.now();
-    const verdictResult = await classifySentenceVerdict(sentence, candidates);
+    const verdictResult = await classifySentenceVerdict(sentence, candidates, turnId, sentenceId);
     const tVerdictEnd = performance.now();
     const verdictLatencyMs = Math.max(1, Number((tVerdictEnd - tVerdictStart).toFixed(2)));
 
     const bestCandidate = candidates[0];
+
+    // Externalize session state: Touch Redis to keep it alive
+    if (sessionId) {
+      const { getRedisSession, updateRedisSession } = await import('@/lib/redis');
+      const session = await getRedisSession(sessionId);
+      if (session) {
+          // Just touching it resets the TTL
+          await updateRedisSession(sessionId, session);
+      }
+    }
 
     return NextResponse.json({
       status: verdictResult.status,

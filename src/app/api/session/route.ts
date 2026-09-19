@@ -85,6 +85,10 @@ export async function POST(req: NextRequest) {
     // Index into Moss
     await indexDocumentInMoss(sessionId, enrichedChunks);
 
+    // Store session state in Redis (Externalize session state)
+    const { createRedisSession } = await import('@/lib/redis');
+    await createRedisSession(sessionId, meta, enrichedChunks);
+
     return NextResponse.json({
       success: true,
       sessionId,

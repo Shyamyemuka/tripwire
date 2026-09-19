@@ -247,6 +247,8 @@ function AgentWorkspace() {
               sessionId: activeSessionId,
               mode: activeMode,
               chunks: activeChunks, // passed for baseline in-memory scan
+              turnId,
+              sentenceId: sId,
             }),
           });
 
@@ -295,6 +297,8 @@ function AgentWorkspace() {
                   sentence: sText,
                   matchedPassageText: data.matchedChunkText,
                   status: data.status,
+                  turnId,
+                  sentenceId: sId,
                 }),
               })
                 .then((r) => r.json())
@@ -406,6 +410,8 @@ function AgentWorkspace() {
           body: JSON.stringify({
             question: questionText,
             documentText: activeDocText,
+            sessionId: activeSessionId,
+            turnId,
           }),
         });
 

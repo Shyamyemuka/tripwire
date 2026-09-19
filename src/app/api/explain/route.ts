@@ -3,7 +3,7 @@ import { generateMismatchExplanation } from '@/lib/gemini';
 
 export async function POST(req: NextRequest) {
   try {
-    const { sentence, matchedPassageText, status } = await req.json();
+    const { sentence, matchedPassageText, status, turnId, sentenceId } = await req.json();
 
     if (!sentence || !matchedPassageText) {
       return NextResponse.json({ explanation: null }, { status: 400 });
@@ -16,7 +16,9 @@ export async function POST(req: NextRequest) {
     const explanation = await generateMismatchExplanation(
       sentence,
       matchedPassageText,
-      status
+      status,
+      turnId,
+      sentenceId
     );
 
     return NextResponse.json({ explanation });
