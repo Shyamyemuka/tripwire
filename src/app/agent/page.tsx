@@ -528,6 +528,44 @@ function AgentWorkspace() {
   const avgRetrievalLatencyMs =
     totalClaimsVerified > 0 ? totalRetrievalLatencyMs / totalClaimsVerified : 0;
 
+  const handleExportAuditReport = useCallback(() => {
+    if (!documentMeta || qaTurns.length === 0) return;
+
+    const reportLines: string[] = [];
+    reportLines.push(`# TRIPWIRE VERIFICATION AUDIT REPORT`);
+    reportLines.push(`Document: ${documentMeta.filename} (${documentMeta.pageCount} pages)`);
+    reportLines.push(`Generated: ${new Date().toLocaleString()}`);
+    reportLines.push(`Total Verified Claims: ${totalClaimsVerified}`);
+    reportLines.push(`Average Moss Retrieval Latency: ${avgRetrievalLatencyMs.toFixed(2)}ms`);
+    reportLines.push(`--------------------------------------------------\n`);
+
+    qaTurns.forEach((turn, tIdx) => {
+      reportLines.push(`[TURN ${tIdx + 1}] Q: ${turn.questionText}`);
+      reportLines.push(`Mode: ${turn.mode.toUpperCase()}`);
+      turn.answerSentences.forEach((s) => {
+        reportLines.push(`  - [${s.status}] "${s.text}"`);
+        if (s.retrievalLatencyMs > 0) {
+          reportLines.push(`    Retrieval: ${s.retrievalLatencyMs.toFixed(1)}ms | Verdict Check: ${s.verdictLatencyMs || 0}ms`);
+        }
+        if (s.explanation) {
+          reportLines.push(`    Explanation: ${s.explanation}`);
+        }
+        if (s.matchedChunkText) {
+          reportLines.push(`    Matched Source: "${s.matchedChunkText.slice(0, 150)}..."`);
+        }
+      });
+      reportLines.push('');
+    });
+
+    const blob = new Blob([reportLines.join('\n')], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `tripwire-audit-${documentMeta.filename.replace(/[^a-zA-Z0-9]/g, '_')}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [documentMeta, qaTurns, totalClaimsVerified, avgRetrievalLatencyMs]);
+
   return (
     <div className="min-h-screen flex flex-col bg-[#000000] text-white font-sans selection:bg-white/20 selection:text-white">
       {/* Saved Sessions Sidebar */}
@@ -557,6 +595,7 @@ function AgentWorkspace() {
             onResetDocument={handleResetDocument}
             onBackToLanding={() => router.push("/")}
             onOpenHistory={() => setIsHistoryOpen(true)}
+            onExportAuditReport={handleExportAuditReport}
           />
 
           <main className="flex-1 flex flex-col justify-between">
@@ -565,6 +604,7 @@ function AgentWorkspace() {
               onSelectSentence={(s) => setSelectedSentence(s)}
               selectedSentenceId={selectedSentence?.sentenceId || null}
               onRetry={handleSubmitQuestion}
+              onSelectSampleQuestion={handleSubmitQuestion}
             />
 
             <QuestionInput

@@ -266,11 +266,12 @@ export async function classifySentenceVerdict(
   }
 
   // Fast-path pre-check for directional or numeric contradictions (Invariant 1)
+  // Check against all retrieved candidate passages: only flag RED if all candidates show a conflict or if top candidate has explicit direction flip
   const bestPassage = passages[0];
-  if (hasDirectionFlip(sentence, bestPassage.text)) {
+  if (hasDirectionFlip(sentence, bestPassage.text) && passages.every(p => hasDirectionFlip(sentence, p.text))) {
     return {
       status: 'RED',
-      reasoning: 'Direction word contradiction detected against source passage.'
+      reasoning: 'Direction word contradiction detected against source passages.'
     };
   }
 

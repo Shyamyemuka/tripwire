@@ -10,6 +10,7 @@ import {
   RotateCcw,
   ArrowLeft,
   Clock,
+  Download,
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
@@ -24,6 +25,7 @@ interface TopBarProps {
   onResetDocument: () => void;
   onBackToLanding?: () => void;
   onOpenHistory?: () => void;
+  onExportAuditReport?: () => void;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
@@ -36,6 +38,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   onResetDocument,
   onBackToLanding,
   onOpenHistory,
+  onExportAuditReport,
 }) => {
   return (
     <header className="border-b border-white/10 bg-black/90 backdrop-blur-xl sticky top-0 z-40 px-4 sm:px-6 py-3 transition-colors">
@@ -112,6 +115,18 @@ export const TopBar: React.FC<TopBarProps> = ({
             >
               <Clock className="w-3.5 h-3.5 text-neutral-400" />
               <span className="hidden sm:inline text-[11px] text-neutral-400">History</span>
+            </button>
+          )}
+
+          {/* Export Audit Report Button for Hackathon Judges */}
+          {onExportAuditReport && (
+            <button
+              onClick={onExportAuditReport}
+              title="Export Verification Audit Report"
+              className="p-1.5 text-neutral-400 hover:text-white rounded-md hover:bg-white/5 transition-colors flex items-center gap-1.5 text-xs ml-1"
+            >
+              <Download className="w-3.5 h-3.5 text-neutral-400" />
+              <span className="hidden sm:inline text-[11px] text-neutral-400">Export Report</span>
             </button>
           )}
         </div>
