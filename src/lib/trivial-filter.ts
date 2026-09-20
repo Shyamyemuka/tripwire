@@ -41,15 +41,29 @@ export function isTrivialClaim(sentence: string): boolean {
   const trimmed = sentence.trim();
   if (!trimmed) return true;
 
-  // If sentence contains any number, digit, percentage, or currency, it has checkable factual content
-  if (/\d/.test(trimmed) || /[\$\u20AC\u00A3\u00A5%]/.test(trimmed)) {
-    return false;
+  // 1. Standalone list markers, bullet symbols, punctuation or numbers alone (e.g. "1.", "2.", "•", "-", "*")
+  if (/^[-*•#\d\.\)\(\:\s]+$/.test(trimmed) || trimmed.length <= 2) {
+    return true;
   }
 
-  // Exact or regex match for known conversational filler and generic opinion
+  // 2. Structural intro headings or framing phrases ending in a colon (e.g. "Key aspects of the project include:", "• Verification Pipeline:")
+  if (/^[-*•#\s]*[A-Za-z\s]+:$/.test(trimmed) && trimmed.split(/\s+/).length <= 8) {
+    return true;
+  }
+
+  // 3. Exact or regex match for known conversational filler and generic opinion
   for (const pattern of FILLER_PHRASES) {
     if (pattern.test(trimmed)) {
       return true;
+    }
+  }
+
+  // If sentence contains actual metrics (currency, percentages, or multi-digit quantities in context), checkable
+  if (/[\$\u20AC\u00A3\u00A5%]/.test(trimmed) || /\b\d{2,}\b/.test(trimmed) || /\b\d+(\.\d+)?\b/.test(trimmed)) {
+    // Only if not a list prefix or short framing
+    const words = trimmed.split(/\s+/);
+    if (words.length > 3) {
+      return false;
     }
   }
 

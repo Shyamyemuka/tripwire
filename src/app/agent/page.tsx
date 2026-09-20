@@ -512,35 +512,6 @@ function AgentWorkspace() {
     executeQuestion(questionText, sessionId, documentFullText, chunks);
   };
 
-  // If entering with ?demo=true, auto-load sample report and run question once
-  useEffect(() => {
-    if (isDemoParam && !sessionId) {
-      fetch("/api/session", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text: SAMPLE_DOCUMENT_TEXT,
-          filename: SAMPLE_DOCUMENT_TITLE,
-        }),
-      })
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.sessionId) {
-            handleDocumentLoaded(data);
-            setTimeout(() => {
-              executeQuestion(
-                "Summarise the financial highlights.",
-                data.sessionId,
-                data.documentFullText,
-                data.chunks
-              );
-            }, 400);
-          }
-        })
-        .catch((err) => console.error("Auto demo load error:", err));
-    }
-  }, [isDemoParam, sessionId, executeQuestion]);
-
   // Automatically persist session changes to IndexedDB
   useEffect(() => {
     if (sessionId && documentMeta) {

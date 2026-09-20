@@ -37,7 +37,7 @@ const DEMO_SENTENCES: DemoSentenceItem[] = [
   },
 ];
 
-type SectionTab = "product" | "how-it-works" | "why-moss" | "docs";
+type SectionTab = "product" | "how-it-works" | "why-moss" | "livekit" | "docs";
 
 export const CinematicLanding: React.FC = () => {
   const [activeTab, setActiveTab] = useState<SectionTab>("product");
@@ -98,6 +98,7 @@ export const CinematicLanding: React.FC = () => {
             { id: "product" as SectionTab, label: "Product" },
             { id: "how-it-works" as SectionTab, label: "How It Works" },
             { id: "why-moss" as SectionTab, label: "Why Moss" },
+            { id: "livekit" as SectionTab, label: "LiveKit Voice" },
             { id: "docs" as SectionTab, label: "Docs" },
           ].map((tab) => {
             const isActive = activeTab === tab.id;
@@ -463,7 +464,62 @@ export const CinematicLanding: React.FC = () => {
           </div>
         )}
 
-        {/* Tab 4: Docs (In Place Over the Background Video) */}
+        {/* Tab 4: LiveKit Voice Integration */}
+        {activeTab === "livekit" && (
+          <div className="max-w-4xl space-y-6 animate-blur-fade-up">
+            <div className="inline-flex items-center gap-2 text-xs tracking-[0.12em] uppercase font-medium text-neutral-400">
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
+              <span>LIVEKIT VOICE INTEGRATION · FR-13</span>
+            </div>
+
+            <h2 className="text-3xl sm:text-4xl md:text-5xl font-medium tracking-tight text-white">
+              Speak questions naturally. Verified live sentence-by-sentence.
+            </h2>
+
+            <p className="text-sm sm:text-base text-neutral-300 max-w-2xl leading-relaxed">
+              Tripwire integrates LiveKit room authentication and dual-mode real-time speech recognition. Ask complex questions out loud, and watch Tripwire stream and fact-check every sentence against the source material in real time.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 pt-2 max-w-3xl">
+              <div className="p-4 rounded-xl bg-black/70 border border-white/10 space-y-1.5 backdrop-blur-md">
+                <div className="text-xs font-semibold text-white flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+                  <span>One-Click Voice Mic</span>
+                </div>
+                <div className="text-xs text-neutral-400 leading-relaxed">
+                  Continuous low-latency audio capture using MediaRecorder &amp; Web Speech API with zero audio cutoffs across all browsers.
+                </div>
+              </div>
+
+              <div className="p-4 rounded-xl bg-black/70 border border-white/10 space-y-1.5 backdrop-blur-md">
+                <div className="text-xs font-semibold text-white flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-cyan-400" />
+                  <span>LiveKit Room Token Protocol</span>
+                </div>
+                <div className="text-xs text-neutral-400 leading-relaxed">
+                  Secure /api/livekit-token endpoint issues authenticated grants for WebRTC sessions and agent speech transcription.
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-4 pt-3">
+              <Link
+                href="/agent"
+                className="px-6 py-2.5 rounded-full bg-white text-black text-xs font-semibold hover:bg-neutral-200 transition-colors tactile-btn"
+              >
+                Try Voice in Workspace →
+              </Link>
+              <button
+                onClick={() => setActiveTab("product")}
+                className="text-xs text-neutral-400 hover:text-white transition-colors"
+              >
+                ← Back to Overview
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Tab 5: Docs (In Place Over the Background Video) */}
         {activeTab === "docs" && (
           <div className="max-w-4xl space-y-6 animate-blur-fade-up">
             <div className="inline-flex items-center gap-2 text-xs tracking-[0.12em] uppercase font-medium text-neutral-400">

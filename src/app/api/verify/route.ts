@@ -70,14 +70,17 @@ export async function POST(req: NextRequest) {
 
     const bestCandidate = candidates[0];
 
-    // Externalize session state: Touch Redis to keep it alive
+    // Externalize session state: Touch Redis asynchronously in background (non-blocking)
     if (sessionId) {
-      const { getRedisSession, updateRedisSession } = await import('@/lib/redis');
-      const session = await getRedisSession(sessionId);
-      if (session) {
-          // Just touching it resets the TTL
-          await updateRedisSession(sessionId, session);
-      }
+      import('@/lib/redis')
+        .then(({ getRedisSession, updateRedisSession }) => {
+          getRedisSession(sessionId)
+            .then((session) => {
+              if (session) updateRedisSession(sessionId, session).catch(() => {});
+            })
+            .catch(() => {});
+        })
+        .catch(() => {});
     }
 
     return NextResponse.json({

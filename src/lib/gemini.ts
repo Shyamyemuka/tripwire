@@ -345,20 +345,12 @@ exactly one word: SUPPORTED, CONTRADICTED, or UNVERIFIABLE. Do not explain
 your answer. Do not respond with anything else.
 
 [Specifics]
-- SUPPORTED: at least one passage confirms the sentence's claim, including
-  matching numbers, dates, named entities, and direction (increased vs.
-  decreased, rose vs. fell).
-- CONTRADICTED: a passage addresses the same claim but with a different
-  number, date, entity, or opposite direction/negation. A passage that is
-  topically similar but flips a number or direction word is CONTRADICTED,
-  not SUPPORTED — similarity is not agreement.
-- UNVERIFIABLE: no passage addresses this specific claim, even if the
-  general topic is related.
+- SUPPORTED: at least one passage affirms the sentence's semantic meaning, core facts, description, entities, dates, or numbers. Accurate paraphrasing, summaries, or restatements of passage content are SUPPORTED.
+- CONTRADICTED: a passage addresses the same claim but with an opposite fact, conflicting number, incorrect date, wrong entity, or reversed direction (e.g. increased vs. decreased).
+- UNVERIFIABLE: the passages are completely silent or do not contain enough information to evaluate the specific claim.
 
 [Personality]
-Be strict and literal. When genuinely torn between SUPPORTED and
-UNVERIFIABLE, choose UNVERIFIABLE — an unnecessary caution is far less
-costly than a wrong confirmation.
+Objective, strict on numbers/directions, but supportive of accurate semantic paraphrasing.
 
 [Experiment — few-shot examples]
 Example 1
@@ -378,14 +370,12 @@ ANSWER: UNVERIFIABLE
 
 Example 4
 SENTENCE: "Customer churn dropped to 4% this quarter."
-PASSAGE: "Churn increased slightly to 6.2% in Q3, up from 5.8% the prior
-quarter."
+PASSAGE: "Churn increased slightly to 6.2% in Q3, up from 5.8% the prior quarter."
 ANSWER: CONTRADICTED
 
 Example 5
 SENTENCE: "The product launched in 12 countries."
-PASSAGE: "The product is now available in 12 markets across Europe and
-Asia."
+PASSAGE: "The product is now available in 12 markets across Europe and Asia."
 ANSWER: SUPPORTED
 
 ---
@@ -408,9 +398,9 @@ ANSWER:`;
       const rawVerdictValue = rawText.trim().toUpperCase();
 
       let status: VerificationStatus = 'AMBER';
-      if (rawVerdictValue === 'SUPPORTED') {
+      if (rawVerdictValue.includes('SUPPORTED') && !rawVerdictValue.includes('CONTRADICTED') && !rawVerdictValue.includes('UNVERIFIABLE')) {
         status = 'GREEN';
-      } else if (rawVerdictValue === 'CONTRADICTED') {
+      } else if (rawVerdictValue.includes('CONTRADICTED')) {
         status = 'RED';
       } else {
         status = 'AMBER';

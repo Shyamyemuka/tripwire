@@ -131,7 +131,12 @@ export class SentenceDetector {
       return true;
     }
 
-    // 3. Check preceding word for known honorifics / mid-sentence abbreviations
+    // 3. Numbered list prefixes at the start of lines or text (e.g. "1.", "2.", "• 1.")
+    if (/^(?:[\s\n]*[-*•]?\s*|\n\s*)\d+$/.test(preText) || /^\s*\d+$/.test(preText.trim())) {
+      return true;
+    }
+
+    // 4. Check preceding word for known honorifics / mid-sentence abbreviations
     const lastWordMatch = preText.match(/([a-zA-Z0-9]+)$/);
     if (lastWordMatch) {
       const lastWord = lastWordMatch[1].toLowerCase();

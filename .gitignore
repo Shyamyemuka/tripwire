@@ -11,10 +11,10 @@
 !.yarn/versions
 
 # Docs
-/docs
+#/docs
 /skills
 /.claude
-CLAUDE.md
+#CLAUDE.md
 
 
 # testing
@@ -53,3 +53,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+#agentenv
+/.freebuff
