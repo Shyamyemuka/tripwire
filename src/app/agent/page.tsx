@@ -9,7 +9,6 @@ import { QuestionInput } from "@/components/QuestionInput";
 import { SourcePanel } from "@/components/SourcePanel";
 import { ChatHistorySidebar } from "@/components/ChatHistorySidebar";
 import { SentenceDetector } from "@/lib/sentence-boundary";
-import { SAMPLE_DOCUMENT_TITLE, SAMPLE_DOCUMENT_TEXT } from "@/lib/sample-doc";
 import {
   saveConversation,
   getConversation,
@@ -26,7 +25,6 @@ import {
 function AgentWorkspace() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const isDemoParam = searchParams.get("demo") === "true";
   const conversationIdParam = searchParams.get("c");
 
   const [sessionId, setSessionId] = useState<string | null>(null);

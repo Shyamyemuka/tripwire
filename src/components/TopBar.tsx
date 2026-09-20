@@ -12,6 +12,7 @@ import {
   Clock,
 } from "lucide-react";
 import Link from "next/link";
+import Image from "next/image";
 
 interface TopBarProps {
   documentMeta: DocumentMeta;
@@ -60,7 +61,17 @@ export const TopBar: React.FC<TopBarProps> = ({
               </Link>
             )}
 
-            <Link href="/" className="flex items-center gap-2">
+            <Link href="/" className="flex items-center gap-2 group">
+              <div className="w-6 h-6 rounded-md overflow-hidden border border-white/20 bg-black flex items-center justify-center p-0.5 group-hover:border-white/40 transition-colors shrink-0">
+                <Image
+                  src="/icon.png"
+                  alt="Tripwire Logo"
+                  width={24}
+                  height={24}
+                  className="w-full h-full object-contain"
+                  priority
+                />
+              </div>
               <span className="font-medium text-sm sm:text-base tracking-[0.1em] text-white">
                 TRIPWIRE
               </span>

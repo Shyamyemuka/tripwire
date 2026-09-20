@@ -1,13 +1,12 @@
 "use client";
 
 import React from "react";
+import Image from "next/image";
 import { QATurn, SentenceVerificationRecord, VerificationStatus } from "@/lib/types";
 import {
-  Bot,
   User,
   AlertCircle,
   AlertTriangle,
-  Sparkles,
   Check,
   X,
   HelpCircle,
@@ -147,8 +146,14 @@ export const QAThread: React.FC<QAThreadProps> = ({
   if (qaTurns.length === 0) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-[#697483] min-h-[400px]">
-        <div className="w-12 h-12 rounded-full bg-white/[0.03] border border-white/10 flex items-center justify-center mb-4 text-[#38BDF8]">
-          <Sparkles className="w-5 h-5 animate-cyan-pulse" />
+        <div className="w-12 h-12 rounded-2xl overflow-hidden bg-black border border-white/15 flex items-center justify-center mb-4 p-1.5 shadow-md">
+          <Image
+            src="/icon.png"
+            alt="Tripwire"
+            width={44}
+            height={44}
+            className="w-full h-full object-contain"
+          />
         </div>
         <p className="text-sm font-medium text-[#F5F7FA]">Document Indexed &amp; Ready for Verification</p>
         <p className="text-xs text-[#A8B1BF] max-w-sm mt-1.5 leading-relaxed">
@@ -188,8 +193,14 @@ export const QAThread: React.FC<QAThreadProps> = ({
 
             {/* Assistant Streamed & Verified Answer */}
             <div className="flex items-start gap-3 justify-start">
-              <div className="w-7 h-7 rounded-full bg-white/[0.06] text-white border border-white/20 flex items-center justify-center shrink-0 mt-0.5">
-                <Bot className="w-4 h-4" />
+              <div className="w-7 h-7 rounded-full overflow-hidden border border-white/20 flex items-center justify-center shrink-0 mt-0.5 bg-black p-0.5 shadow-sm">
+                <Image
+                  src="/icon.png"
+                  alt="Tripwire AI"
+                  width={28}
+                  height={28}
+                  className="w-full h-full object-contain"
+                />
               </div>
 
               <div className="flex-1 bg-[#080808] p-5 sm:p-6 rounded-2xl rounded-tl-xs border border-white/10 shadow-lg space-y-4">

@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import {
   ArrowRight,
   Play,
@@ -82,9 +83,19 @@ export const CinematicLanding: React.FC = () => {
 
       {/* Navbar */}
       <header className="relative z-50 px-5 sm:px-8 md:px-12 py-5 md:py-6 flex items-center justify-between">
-        {/* Brand Wordmark */}
+        {/* Brand Wordmark & Logo */}
         <div className="flex items-center gap-2.5">
-          <Link href="/" onClick={() => setActiveTab("product")} className="flex items-center gap-2">
+          <Link href="/" onClick={() => setActiveTab("product")} className="flex items-center gap-2.5 group">
+            <div className="w-8 h-8 rounded-lg overflow-hidden border border-white/20 bg-black flex items-center justify-center p-0.5 group-hover:border-white/40 transition-colors shrink-0">
+              <Image
+                src="/logo.png"
+                alt="Tripwire Logo"
+                width={32}
+                height={32}
+                className="w-full h-full object-contain"
+                priority
+              />
+            </div>
             <span className="font-medium text-lg sm:text-xl tracking-[0.12em] text-white font-sans">
               TRIPWIRE
             </span>

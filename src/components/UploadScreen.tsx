@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useRef } from "react";
+import Image from "next/image";
 import {
   UploadCloud,
   FileText,
@@ -135,6 +136,16 @@ export const UploadScreen: React.FC<UploadScreenProps> = ({
               <ArrowLeft className="w-4 h-4" />
             </button>
           )}
+          <div className="w-7 h-7 rounded-md overflow-hidden border border-white/20 bg-black flex items-center justify-center p-0.5 shrink-0">
+            <Image
+              src="/icon.png"
+              alt="Tripwire Logo"
+              width={28}
+              height={28}
+              className="w-full h-full object-contain"
+              priority
+            />
+          </div>
           <span className="font-medium text-base sm:text-lg tracking-[0.1em] text-white font-sans">
             TRIPWIRE
           </span>
@@ -147,7 +158,7 @@ export const UploadScreen: React.FC<UploadScreenProps> = ({
               onClick={onOpenHistory}
               className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-[11px] font-mono text-neutral-300 hover:text-white transition-all"
             >
-              <Clock className="w-3.5 h-3.5 text-[#38BDF8]" />
+              <Clock className="w-3.5 h-3.5 text-neutral-400" />
               <span>History</span>
             </button>
           )}

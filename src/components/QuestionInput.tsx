@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { ArrowUp, Loader2, Mic, Check, X } from "lucide-react";
 
 interface QuestionInputProps {
@@ -31,34 +31,7 @@ export const QuestionInput: React.FC<QuestionInputProps> = ({
   const streamRef = useRef<MediaStream | null>(null);
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  useEffect(() => {
-    return () => {
-      stopAllResources();
-    };
-  }, []);
-
-  // Timer effect during recording
-  useEffect(() => {
-    if (isRecording) {
-      setRecordingSeconds(0);
-      timerIntervalRef.current = setInterval(() => {
-        setRecordingSeconds((prev) => prev + 1);
-      }, 1000);
-    } else {
-      if (timerIntervalRef.current) {
-        clearInterval(timerIntervalRef.current);
-        timerIntervalRef.current = null;
-      }
-    }
-    return () => {
-      if (timerIntervalRef.current) {
-        clearInterval(timerIntervalRef.current);
-        timerIntervalRef.current = null;
-      }
-    };
-  }, [isRecording]);
-
-  const stopAllResources = () => {
+  const stopAllResources = useCallback(() => {
     if (timerIntervalRef.current) {
       clearInterval(timerIntervalRef.current);
       timerIntervalRef.current = null;
@@ -71,7 +44,7 @@ export const QuestionInput: React.FC<QuestionInputProps> = ({
       }
       recognitionRef.current = null;
     }
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+    if (mediaRecorderRef.current) {
       try {
         mediaRecorderRef.current.stop();
       } catch {
@@ -83,7 +56,28 @@ export const QuestionInput: React.FC<QuestionInputProps> = ({
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      stopAllResources();
+    };
+  }, [stopAllResources]);
+
+  // Timer effect during recording
+  useEffect(() => {
+    if (isRecording) {
+      timerIntervalRef.current = setInterval(() => {
+        setRecordingSeconds((prev) => prev + 1);
+      }, 1000);
+    }
+    return () => {
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+        timerIntervalRef.current = null;
+      }
+    };
+  }, [isRecording]);
 
   const startVoiceRecording = async () => {
     setValidationError(null);
@@ -107,6 +101,7 @@ export const QuestionInput: React.FC<QuestionInputProps> = ({
       };
 
       mediaRecorder.start(250);
+      setRecordingSeconds(0);
       setIsRecording(true);
 
       // 2. Also run browser SpeechRecognition if available for live interim feedback

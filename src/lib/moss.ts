@@ -155,6 +155,8 @@ export async function queryMossRetrieval(
         timeTakenInMs: elapsed
       };
     } catch {
+      mossDegraded = true;
+      mossLastFailure = Date.now();
       // If cloud network query is slow (>15ms), seamlessly use instant in-memory resident scan (<1ms)
     }
   }
