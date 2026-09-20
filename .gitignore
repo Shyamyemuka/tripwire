@@ -11,10 +11,10 @@
 !.yarn/versions
 
 # Docs
-#/docs
+/docs
 /skills
 /.claude
-#CLAUDE.md
+CLAUDE.md
 
 
 # testing
