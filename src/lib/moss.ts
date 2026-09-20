@@ -164,14 +164,20 @@ export async function queryMossRetrieval(
   // Local fast fallback if Moss credentials not yet provided
   // Uses keyword overlap / BM25-style local token score with actual performance.now()
   const t0 = performance.now();
-  const queryTokens = new Set(sentenceText.toLowerCase().split(/\s+/).filter(w => w.length > 2));
+  const STOPWORDS = new Set([
+    'the', 'and', 'for', 'with', 'that', 'this', 'from', 'was', 'were', 'are', 'been', 'have', 'has', 'had', 'its', 'into', 'which'
+  ]);
+  const rawTokens = sentenceText.toLowerCase().match(/\b[a-z0-9_]{2,}\b/g) || [];
+  const filteredTokens = rawTokens.filter(t => !STOPWORDS.has(t));
+  const queryTokens = new Set(filteredTokens.length > 0 ? filteredTokens : rawTokens);
   const scored: Array<{ chunk: ChunkRecord; score: number }> = [];
 
   for (const chunk of chunkMap.values()) {
-    const chunkTokens = chunk.text.toLowerCase().split(/\s+/);
+    const chunkWords = chunk.text.toLowerCase().match(/\b[a-z0-9_]{2,}\b/g) || [];
+    const chunkWordSet = new Set(chunkWords);
     let overlap = 0;
-    for (const t of chunkTokens) {
-      if (queryTokens.has(t)) overlap++;
+    for (const t of queryTokens) {
+      if (chunkWordSet.has(t)) overlap++;
     }
     const score = queryTokens.size > 0 ? overlap / queryTokens.size : 0;
     scored.push({ chunk, score });

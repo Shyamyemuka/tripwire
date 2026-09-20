@@ -374,10 +374,18 @@ function AgentWorkspace() {
       let sentenceCounter = 0;
 
       const appendSentence = (text: string) => {
+        // Strip leading/trailing decorative symbols or em dashes
+        const cleanText = text.replace(/^[\s—–\-*•#]+/, '').replace(/[\s—–\-]+$/, '').trim();
+        const letters = cleanText.replace(/[^a-zA-Z]/g, '');
+        if (letters.length < 2) {
+          // Do not verify decorative em dashes, bullet characters, or standalone numbers as claims
+          return;
+        }
+
         const sentenceId = `${turnId}-s-${sentenceCounter++}`;
         const record: SentenceVerificationRecord = {
           sentenceId,
-          text,
+          text: cleanText,
           status: "PENDING",
           matchedChunkId: null,
           matchedChunkText: null,
@@ -398,7 +406,7 @@ function AgentWorkspace() {
         );
 
         // Dispatch async verification via bounded concurrency queue
-        enqueueVerification(sentenceId, text);
+        enqueueVerification(sentenceId, cleanText);
       };
 
       try {

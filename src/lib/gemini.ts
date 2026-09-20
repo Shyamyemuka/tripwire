@@ -200,50 +200,7 @@ export interface VerdictResult {
   reasoning: string;
 }
 
-const UPWARD_DIRECTION_REGEX = /\b(increased?|rose|risen|grow(n|ing)?|grew|growth|higher|up|expanded?|gain(ed)?|surplus|soared|accelerated?)\b/i;
-const DOWNWARD_DIRECTION_REGEX = /\b(decreased?|fell|fall(en|ing)?|shrank|declined?|decline|lower|down|contracted?|loss(es)?|lost|deficit|compressed?|plunged|slowed)\b/i;
 
-/**
- * Defensive check for directional contradiction between sentence and passage
- */
-function hasDirectionFlip(sentence: string, passageText: string): boolean {
-  const sUp = UPWARD_DIRECTION_REGEX.test(sentence);
-  const sDown = DOWNWARD_DIRECTION_REGEX.test(sentence);
-  const pUp = UPWARD_DIRECTION_REGEX.test(passageText);
-  const pDown = DOWNWARD_DIRECTION_REGEX.test(passageText);
-
-  if (sUp && pDown && !pUp) return true;
-  if (sDown && pUp && !pDown) return true;
-  return false;
-}
-
-/**
- * Defensive check for conflicting numbers, dollar amounts, or percentages on shared metrics
- */
-function hasNumericConflict(sentence: string, passageText: string): boolean {
-  const sentPercents: string[] = (sentence.match(/\b\d+(\.\d+)?%/g) || []).map(p => p.toLowerCase());
-  const passPercents: string[] = (passageText.match(/\b\d+(\.\d+)?%/g) || []).map(p => p.toLowerCase());
-
-  if (sentPercents.length > 0 && passPercents.length > 0) {
-    const hasMatch = sentPercents.some(p => passPercents.includes(p));
-    if (!hasMatch) {
-      return true;
-    }
-  }
-
-  const currencyPattern = /\$\s*(\d+(\.\d+)?)\s*(million|billion|thousand|m|b|k)?/gi;
-  const sentCurrencies = Array.from(sentence.matchAll(currencyPattern)).map(m => m[0].replace(/\s+/g, '').toLowerCase());
-  const passCurrencies = Array.from(passageText.matchAll(currencyPattern)).map(m => m[0].replace(/\s+/g, '').toLowerCase());
-
-  if (sentCurrencies.length > 0 && passCurrencies.length > 0) {
-    const hasMatch = sentCurrencies.some(c => passCurrencies.includes(c));
-    if (!hasMatch) {
-      return true;
-    }
-  }
-
-  return false;
-}
 
 /**
  * FR-8: Verdict Classification (The Similarity-Is-Not-Truth Safeguard)
@@ -265,23 +222,6 @@ export async function classifySentenceVerdict(
     };
   }
 
-  // Pre-check for direction or numeric conflict
-  const bestPassage = passages[0];
-  if (hasDirectionFlip(sentence, bestPassage.text)) {
-    return {
-      status: 'RED',
-      reasoning: 'Direction word contradiction detected against source passage.'
-    };
-  }
-
-  // If the sentence mentions numbers/metrics and EVERY candidate passage has conflicting numbers:
-  if (hasNumericConflict(sentence, bestPassage.text) && passages.every(p => hasNumericConflict(sentence, p.text))) {
-    return {
-      status: 'RED',
-      reasoning: 'Numerical discrepancy detected against source passage metrics.'
-    };
-  }
-
   const keys = getAvailableGeminiKeys();
   if (keys.length === 0) {
     // Offline / unconfigured key fallback:
@@ -295,7 +235,7 @@ export async function classifySentenceVerdict(
       if (allNumbersMatch) {
         return {
           status: 'GREEN',
-          reasoning: 'Numbers and directional claims corroborated by source passage.'
+          reasoning: 'Numbers corroborated by source passage.'
         };
       } else {
         return {
@@ -305,12 +245,12 @@ export async function classifySentenceVerdict(
       }
     }
 
-    const sWords = sentence.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+    const sWords = sentence.toLowerCase().match(/\b[a-z0-9_]{3,}\b/g) || [];
     const pText = bestPassage.text.toLowerCase();
     const matchCount = sWords.filter(w => pText.includes(w)).length;
     const ratio = sWords.length > 0 ? matchCount / sWords.length : 0;
 
-    if (ratio >= 0.8) {
+    if (ratio >= 0.6) {
       return {
         status: 'GREEN',
         reasoning: 'Source passage substantiates claim.'
@@ -346,8 +286,8 @@ your answer. Do not respond with anything else.
 
 [Specifics]
 - SUPPORTED: at least one passage affirms the sentence's semantic meaning, core facts, description, entities, dates, or numbers. Accurate paraphrasing, summaries, or restatements of passage content are SUPPORTED.
-- CONTRADICTED: a passage addresses the same claim but with an opposite fact, conflicting number, incorrect date, wrong entity, or reversed direction (e.g. increased vs. decreased).
-- UNVERIFIABLE: the passages are completely silent or do not contain enough information to evaluate the specific claim.
+- CONTRADICTED: a passage explicitly discusses the same topic, metric, or event, but provides an opposite fact, conflicting number, wrong date, or reversed direction (e.g. passage says "fell 5%" but sentence says "rose 20%"). CRITICAL: If the passage does not mention the topic or lacks details, you MUST classify it as UNVERIFIABLE, NEVER CONTRADICTED.
+- UNVERIFIABLE: the passages do not contain enough information to evaluate the specific claim, or the claim is not discussed in the retrieved passages.
 
 [Personality]
 Objective, strict on numbers/directions, but supportive of accurate semantic paraphrasing.
@@ -376,6 +316,11 @@ ANSWER: CONTRADICTED
 Example 5
 SENTENCE: "The product launched in 12 countries."
 PASSAGE: "The product is now available in 12 markets across Europe and Asia."
+ANSWER: SUPPORTED
+
+Example 6
+SENTENCE: "Top 10 finalist at Master AI Hackathon with Nexus AI (Bangalore)."
+PASSAGE: "Master AI Hackathon (Bangalore) with Nexus AI - Top 10 Finalist."
 ANSWER: SUPPORTED
 
 ---

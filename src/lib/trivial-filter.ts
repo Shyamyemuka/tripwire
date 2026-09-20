@@ -41,8 +41,14 @@ export function isTrivialClaim(sentence: string): boolean {
   const trimmed = sentence.trim();
   if (!trimmed) return true;
 
-  // 1. Standalone list markers, bullet symbols, punctuation or numbers alone (e.g. "1.", "2.", "•", "-", "*")
-  if (/^[-*•#\d\.\)\(\:\s]+$/.test(trimmed) || trimmed.length <= 2) {
+  // 0. Standalone punctuation, symbols, em dashes, or strings with fewer than 2 letters
+  const letters = trimmed.replace(/[^a-zA-Z]/g, '');
+  if (letters.length < 2) {
+    return true;
+  }
+
+  // 1. Standalone list markers, bullet symbols, em dashes, punctuation or numbers alone (e.g. "1.", "2.", "•", "-", "—", "--")
+  if (/^[\s—–\-*•#\d\.\)\(\:\/]+$/.test(trimmed) || trimmed.length <= 2) {
     return true;
   }
 

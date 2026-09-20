@@ -2,55 +2,59 @@
 
 **Real-Time, Sentence-Level Hallucination Detection for Streaming LLM Output**
 
-Tripwire is an inline verification and safety engine designed to intercept streaming Large Language Model (LLM) responses and verify each factual claim against a source document in real time. Rather than relying on post-generation evaluation frameworks, Tripwire fact-checks sentence by sentence as tokens stream, rendering immediate visual verdicts before incorrect statements can lead to cognitive anchoring or costly downstream errors.
+Tripwire intercepts streaming Large Language Model (LLM) responses and verifies each factual claim against a source document in real time. Rather than relying on post-generation evaluation frameworks, Tripwire fact-checks sentence by sentence as tokens stream, rendering immediate visual verdicts before incorrect statements can cause cognitive anchoring.
 
 ---
 
-## Overview
+## Architecture & Verification Flow
 
-Traditional Retrieval-Augmented Generation (RAG) evaluators and guardrails (e.g., Guardrails AI, Ragas, TruLens) operate strictly post-hoc. Because conventional vector databases incur search latencies between 150ms and 500ms—far exceeding the typical 20ms to 40ms inter-token cadence of modern streaming models—real-time inline verification has historically been technically unfeasible.
+Tripwire leverages **Moss's sub-10ms semantic retrieval** to fit retrieval and classification directly inside the natural inter-token streaming window:
 
-Tripwire leverages **Moss's sub-10ms semantic retrieval engine** to eliminate this bottleneck. By pairing ultra-low latency index querying with an asynchronous sentence boundary detector, Tripwire retrieves relevant source passages and computes rigorous factual verdicts concurrently with token generation.
+```mermaid
+flowchart TD
+    subgraph Ingestion ["1. Document Intake"]
+        DOC["Uploaded Document (PDF / TXT)"] --> CHUNK["Chunking Engine"]
+        CHUNK --> MOSS_IDX["Moss Sub-10ms Vector Index"]
+    end
 
-```
-[Uploaded Document] ──> Chunking & Extraction ──> Moss Index (Sub-10ms)
-                                                        │
-[User Query] ──> Streaming LLM (Tokens)                  │ Per-Sentence
-                       │                                │ Candidate Query
-                       ▼                                ▼
-            [Sentence Boundary Detector] ──> [NLI Verdict Classifier]
-                       │                                │
-                       ▼                                ▼
-            [Live Stream UI] <── Precision Color Coding (Green / Red / Amber / Grey)
+    subgraph Generation ["2. Streaming Generation"]
+        USER["User Question"] --> LLM["Streaming LLM"]
+        LLM --> STREAM["Live Token Stream"]
+        STREAM --> DETECT["Sentence Boundary Detector"]
+    end
+
+    subgraph Verification ["3. Real-Time Verification"]
+        DETECT -->|"Completed Sentence"| MOSS_Q["Moss Query (<10ms)"]
+        MOSS_IDX -.->|"Candidate Passages"| MOSS_Q
+        MOSS_Q --> NLI["NLI Verdict Classifier"]
+        NLI -->|"Supported / Contradicted / Unverifiable"| VERDICT["Sequential Highlights"]
+    end
+
+    VERDICT --> UI["Precision Streaming Answer UI"]
+    UI -.->|"Inspect Claim"| DRAWER["Source Citation & Diff Drawer"]
 ```
 
 ---
 
-## Core Principles & Pipeline Invariants
+## Core Principles
 
-Tripwire is engineered around five non-negotiable correctness principles:
-
-1. **Similarity Is Not Truth**: Vector distance alone cannot establish factual truth. A sentence asserting *"operating expenses dropped 18%"* shares nearly all semantic tokens with a source passage reading *"operating expenses rose 18%"*, scoring exceptionally high similarity against the exact claim it contradicts. Tripwire uses vector retrieval exclusively for candidate discovery, routing candidates to an explicit natural language inference (NLI) classification stage that strictly audits directional verbs, quantities, dates, and negations.
-2. **Independent Per-Sentence Queries**: Verification never reuses the generation prompt's bundled context window. Every completed sentence issues its own fresh, isolated retrieval query against the entire source document. This ensures detection of external hallucinations and model drift into topics unaddressed by the source text.
-3. **Fail-Safe Default (Never False Positive)**: Under any failure state—including network timeouts, upstream rate limits, or ambiguous source coverage—the verification verdict unconditionally resolves to **Amber** (`UNVERIFIABLE`). An unverified claim is never reported as verified (**Green**).
-4. **Authentic Clock Telemetry**: Every latency metric presented in the interface is captured via high-resolution `performance.now()` clocks around the actual execution path. Baseline comparisons execute an authentic, un-mocked brute-force cosine similarity loop to provide rigorous empirical benchmarks.
-5. **Ordered Progressive Rendering**: Although retrieval and verdict classification calls execute asynchronously, verdicts are revealed strictly in sequential reading order. A subsequent sentence is never colored before prior sentences have resolved.
+- **Similarity Is Not Truth**: Vector search finds candidate passages; it cannot determine factual validity. Contradictions (e.g., *"revenue grew 10%"* vs. *"revenue fell 10%"*) score high similarity. An NLI classification step cross-examines numbers, directions, and dates before assigning a verdict.
+- **Fresh Queries Per Sentence**: Each completed sentence issues its own fresh, isolated retrieval query against the entire source document to catch external hallucinations and drift.
+- **Fail-Safe Default**: Any network failure, rate limit, or ambiguous source coverage strictly resolves to **Amber** (`UNVERIFIABLE`). The system never falsely reports an unverified claim as verified (**Green**).
+- **Authentic Clock Telemetry**: Every latency number is captured using high-resolution `performance.now()` clocks around real computation—including the un-mocked brute-force cosine baseline.
+- **Ordered Progressive Rendering**: Verification calls run concurrently, but highlights reveal strictly in reading order to prevent visual flickering.
 
 ---
 
 ## Key Features
 
-- **Inline Sentence Boundary Detection**: A client-side streaming tokenizer identifies grammatical and syntactic sentence terminations in real time as tokens arrive.
-- **Sub-10ms Semantic Retrieval Layer**: Direct integration with `@moss-dev/moss` enables instant extraction of candidate passages across thousands of document tokens.
-- **Four-Tier Precision Verdict Classification**:
-  - **Green (Supported)**: Claim is directly affirmed by the source document.
-  - **Red (Contradicted)**: Claim directly contradicts numbers, directions, dates, or assertions in the source passage.
-  - **Amber (Unverifiable)**: Passage is ambiguous, topically disjoint, or verification timed out (safe default).
-  - **Grey (Non-Factual)**: Syntactic greetings, opinions, and rhetorical transition statements filtered automatically.
-- **Deep Source Inspection Drawer**: Clicking any sentence reveals the corresponding source snippet, exact document page number, character offsets, and automated contradiction reasoning.
-- **Authentic A/B Latency Comparison**: An interactive mode switch permits toggling between the optimized Moss retrieval pipeline and an in-memory brute-force cosine similarity baseline, displaying real-time microsecond-level retrieval delta.
-- **Multi-Key Failover & Resilient Generation**: Upstream LLM orchestration incorporates automatic key rotation, model fallback, and request pacing to prevent disruption from transient provider availability spikes.
-- **Zero-Backend Client Persistence**: Full session and audit history are cached locally in IndexedDB without external database overhead.
+- **Inline Sentence Boundary Detection**: Client-side tokenizer identifies completed grammatical sentences on the fly as tokens stream.
+- **Sub-10ms Retrieval Layer**: Integrated `@moss-dev/moss` vector search retrieves source candidates within single-digit milliseconds.
+- **4-Tier Precision Highlighting**: Live visual feedback—**Green** (Supported), **Red** (Contradicted), **Amber** (Unverifiable), and **Grey** (Non-factual statements/transitions).
+- **Source Inspection Drawer**: Click any verified sentence to view the exact source passage, page number, character offsets, and contradiction reasoning.
+- **Live A/B Latency Comparison**: Real-time toggle comparing Moss with an in-memory brute-force cosine baseline, complete with microsecond telemetry.
+- **Resilient Multi-Key Failover**: Automated API key cycling, backoff, and fallback models protect against upstream provider rate limits.
+- **Zero-Database Persistence**: Client-side IndexedDB stores audit trails and conversation history locally with zero external database dependencies.
 
 ---
 
@@ -58,57 +62,24 @@ Tripwire is engineered around five non-negotiable correctness principles:
 
 | Layer | Technology | Purpose |
 |---|---|---|
-| **Framework** | Next.js 16 (App Router, Turbopack) | High-performance server-rendered and API execution |
-| **Runtime** | Node.js 20+ / TypeScript 5 | Type-safe backend routes and component architecture |
-| **Frontend UI** | React 19, Tailwind CSS v4, Lucide | Modern tactile dark-mode interface with streaming typography |
-| **Retrieval Engine** | `@moss-dev/moss` | Dedicated sub-10ms vector indexing and query execution |
+| **Framework** | Next.js 16 (App Router, Turbopack) | Server-rendered frontend and high-performance API routes |
+| **Runtime** | Node.js 20+ / TypeScript 5 | End-to-end type safety and asynchronous pipeline execution |
+| **Frontend** | React 19, Tailwind CSS v4, Lucide | Streaming typography, animations, and tactile dark UI |
+| **Retrieval Engine** | `@moss-dev/moss` | Sub-10ms semantic vector indexing and query execution |
 | **Language Models** | Google Gemini (`@google/genai`) | Whole-document stuffed generation, verdict classification, and explanation |
-| **Document Intake** | `pdf-parse` & UTF-8 Text Extractors | Fast client/server parsing of multi-page PDF, TXT, and Markdown files |
-| **Client Storage** | IndexedDB (`lib/storage.ts`) | Zero-footprint local audit logging and session persistence |
+| **Document Intake** | `pdf-parse` & UTF-8 Text Extractors | Multi-page PDF, TXT, and Markdown parsing |
+| **Client Storage** | IndexedDB (`lib/storage.ts`) | Zero-footprint session caching and conversation history |
 
 ---
 
 ## Project Structure
 
-```
-tripwire/
-├── src/
-│   ├── app/
-│   │   ├── api/
-│   │   │   ├── explain/route.ts      # Asynchronous mismatch explanation endpoint
-│   │   │   ├── generate/route.ts     # SSE streaming answer generation route
-│   │   │   ├── session/route.ts      # Document ingestion and Moss indexing route
-│   │   │   └── verify/route.ts       # Per-sentence retrieval and verdict classification
-│   │   ├── agent/page.tsx            # Primary verification workspace and state machine
-│   │   ├── globals.css               # Design tokens, keyframe animations, and custom styling
-│   │   ├── layout.tsx                # Application root layout and metadata configuration
-│   │   └── page.tsx                  # Application entry point
-│   ├── components/
-│   │   ├── ChatHistorySidebar.tsx    # IndexedDB conversation and session management drawer
-│   │   ├── CinematicLanding.tsx      # Interactive product briefing and onboarding screen
-│   │   ├── QAThread.tsx              # Streaming conversation thread with live precision highlights
-│   │   ├── QuestionInput.tsx         # Tactile input controller with submission safeguards
-│   │   ├── SourcePanel.tsx           # Slide-over citation drawer with passage diff analysis
-│   │   ├── TopBar.tsx                # Telemetry header, latency metrics, and A/B mode toggle
-│   │   └── UploadScreen.tsx          # Multi-format document intake with indexing progress indicator
-│   └── lib/
-│       ├── baseline.ts               # Un-mocked brute-force cosine baseline comparison engine
-│       ├── chunking.ts               # Overlapping window chunker with character and page offsets
-│       ├── gemini.ts                 # Resilient multi-key LLM client with failover & backoff
-│       ├── moss.ts                   # Moss SDK integration, index lifecycle, and query client
-│       ├── sample-doc.ts             # Embedded reference financial disclosure for instant benchmarking
-│       ├── sentence-boundary.ts      # Stream-safe incremental sentence boundary detector
-│       ├── storage.ts                # Client-side IndexedDB persistence adapter
-│       ├── trivial-filter.ts         # Fast-path non-factual claim filter
-│       └── types.ts                  # Core TypeScript domain definitions and schema contracts
-├── docs/
-│   ├── PRD.md                        # Formal Product Requirements Document (v1.1)
-│   ├── APP_FLOW.md                   # Complete user flow and UI state machine documentation
-│   └── TECH_STACK.md                 # Architecture rationale and dependency validation records
-├── skills/
-│   └── tripwire-pipeline/SKILL.md    # Pipeline invariant governance specifications
-└── package.json                      # Pinned dependencies and operational build scripts
-```
+Tripwire is structured as a modular Next.js application:
+
+- **`src/app/`**: Next.js App Router workspace (`/agent`) and API routes (`/api/session`, `/api/generate`, `/api/verify`, `/api/explain`).
+- **`src/components/`**: UI components including the streaming QA thread, citation inspection drawer, top telemetry bar, and upload view.
+- **`src/lib/`**: Pipeline internals—Moss integration, streaming sentence boundary detector, NLI classifier, baseline comparison engine, and IndexedDB storage.
+- **`docs/`**: Architectural specifications, formal PRD, state machine definitions, and tech stack validation.
 
 ---
 
@@ -123,13 +94,13 @@ tripwire/
 
 ### Environment Configuration
 
-Create a `.env` file in the project root based on `.env.example`:
+Create a `.env` file in the project root:
 
 ```bash
 cp .env.example .env
 ```
 
-Populate the configuration parameters:
+Populate the required credentials:
 
 ```env
 # Google Gemini API Keys (Multi-key failover supported)
@@ -145,45 +116,25 @@ GEMINI_EMBEDDING_MODEL=gemini-embedding-2
 # Moss Retrieval Credentials
 MOSS_PROJECT_ID=your_moss_project_id
 MOSS_PROJECT_KEY=your_moss_project_key
-
-# Optional: Baseline Embedding Key (used solely for FR-12 brute-force comparison)
-EMBEDDING_API_KEY=your_embedding_api_key
 ```
 
 ### Installation & Execution
 
-1. **Install dependencies:**
-   ```bash
-   npm install
-   ```
+```bash
+# 1. Install dependencies
+npm install
 
-2. **Start the local development server:**
-   ```bash
-   npm run dev
-   ```
-   Navigate to [http://localhost:3000](http://localhost:3000).
+# 2. Run local development server
+npm run dev
 
-3. **Produce an optimized production build:**
-   ```bash
-   npm run build
-   npm run start
-   ```
+# 3. Production build
+npm run build
+npm run start
 
-4. **Codebase quality checks:**
-   ```bash
-   npm run lint
-   npx tsc --noEmit
-   ```
-
----
-
-## Verification & Benchmarks
-
-Tripwire includes built-in verification routines to validate pipeline compliance against known contradiction benchmarks:
-
-- **Numerical Inversion Test**: Validates that conflicting numerical statistics (e.g., source: *"\$45M"* vs. generated: *"\$30M"*) reliably trigger **Red** verdicts regardless of high semantic similarity.
-- **Directional Flip Test**: Validates that antithetical polarity (e.g., source: *"expanded"* vs. generated: *"contracted"*) is identified as a contradiction.
-- **Unverifiable Extrapolation Test**: Confirms that claims introducing out-of-document entities cleanly resolve to **Amber** without false positives.
+# 4. Code quality checks
+npm run lint
+npx tsc --noEmit
+```
 
 ---
 

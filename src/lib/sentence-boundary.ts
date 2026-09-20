@@ -35,15 +35,38 @@ export class SentenceDetector {
         break;
       }
 
-      const sentence = this.buffer.slice(0, match.endIndex).trim();
+      let sentence = this.buffer.slice(0, match.endIndex).trim();
       this.buffer = this.buffer.slice(match.endIndex).trimStart();
-      if (sentence.length > 0) {
+
+      // Check if sentence has valid verbal content (at least 2 letters)
+      const letters = sentence.replace(/[^a-zA-Z]/g, '');
+      if (letters.length < 2) {
+        // If it's a prefix (e.g. "**3." or "--") and more text exists in buffer, keep it attached to the buffer
+        if (this.buffer.length > 0) {
+          this.buffer = sentence + ' ' + this.buffer;
+          continue;
+        } else {
+          // Drop isolated symbols
+          continue;
+        }
+      }
+
+      // Strip isolated leading/trailing em dashes, dashes, or bullet points
+      sentence = sentence.replace(/^[\s—–\-*•#]+/, '').replace(/[\s—–\-]+$/, '').trim();
+      if (sentence.length > 0 && letters.length >= 2) {
         completed.push(sentence);
       }
     }
 
     if (isEnd && this.buffer.trim().length > 0) {
-      completed.push(this.buffer.trim());
+      let sentence = this.buffer.trim();
+      const letters = sentence.replace(/[^a-zA-Z]/g, '');
+      if (letters.length >= 2) {
+        sentence = sentence.replace(/^[\s—–\-*•#]+/, '').replace(/[\s—–\-]+$/, '').trim();
+        if (sentence.length > 0) {
+          completed.push(sentence);
+        }
+      }
       this.buffer = '';
     }
 
@@ -131,8 +154,9 @@ export class SentenceDetector {
       return true;
     }
 
-    // 3. Numbered list prefixes at the start of lines or text (e.g. "1.", "2.", "• 1.")
-    if (/^(?:[\s\n]*[-*•]?\s*|\n\s*)\d+$/.test(preText) || /^\s*\d+$/.test(preText.trim())) {
+    // 3. Numbered list prefixes at the start of lines or text (e.g. "1.", "2.", "**3.", "* 1.", "### 1.")
+    const cleanPre = preText.replace(/[*_~`#•\-\s]/g, '');
+    if (/^\d+$/.test(cleanPre) || /^(?:[\s\n]*[-*•]?\s*|\n\s*)\d+$/.test(preText) || /^\s*\d+$/.test(preText.trim())) {
       return true;
     }
 
