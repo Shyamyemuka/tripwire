@@ -200,7 +200,50 @@ export interface VerdictResult {
   reasoning: string;
 }
 
+const UPWARD_DIRECTION_REGEX = /\b(increased?|rose|risen|grow(n|ing)?|grew|growth|higher|up|expanded?|gain(ed)?|surplus|soared|accelerated?)\b/i;
+const DOWNWARD_DIRECTION_REGEX = /\b(decreased?|fell|fall(en|ing)?|shrank|declined?|decline|lower|down|contracted?|loss(es)?|lost|deficit|compressed?|plunged|slowed)\b/i;
 
+/**
+ * Defensive check for directional contradiction between sentence and passage
+ */
+function hasDirectionFlip(sentence: string, passageText: string): boolean {
+  const sUp = UPWARD_DIRECTION_REGEX.test(sentence);
+  const sDown = DOWNWARD_DIRECTION_REGEX.test(sentence);
+  const pUp = UPWARD_DIRECTION_REGEX.test(passageText);
+  const pDown = DOWNWARD_DIRECTION_REGEX.test(passageText);
+
+  if (sUp && pDown && !pUp) return true;
+  if (sDown && pUp && !pDown) return true;
+  return false;
+}
+
+/**
+ * Defensive check for conflicting numbers, dollar amounts, or percentages on shared metrics
+ */
+function hasNumericConflict(sentence: string, passageText: string): boolean {
+  const sentPercents: string[] = (sentence.match(/\b\d+(\.\d+)?%/g) || []).map(p => p.toLowerCase());
+  const passPercents: string[] = (passageText.match(/\b\d+(\.\d+)?%/g) || []).map(p => p.toLowerCase());
+
+  if (sentPercents.length > 0 && passPercents.length > 0) {
+    const hasMatch = sentPercents.some(p => passPercents.includes(p));
+    if (!hasMatch) {
+      return true;
+    }
+  }
+
+  const currencyPattern = /\$\s*(\d+(\.\d+)?)\s*(million|billion|thousand|m|b|k)?/gi;
+  const sentCurrencies = Array.from(sentence.matchAll(currencyPattern)).map(m => m[0].replace(/\s+/g, '').toLowerCase());
+  const passCurrencies = Array.from(passageText.matchAll(currencyPattern)).map(m => m[0].replace(/\s+/g, '').toLowerCase());
+
+  if (sentCurrencies.length > 0 && passCurrencies.length > 0) {
+    const hasMatch = sentCurrencies.some(c => passCurrencies.includes(c));
+    if (!hasMatch) {
+      return true;
+    }
+  }
+
+  return false;
+}
 
 /**
  * FR-8: Verdict Classification (The Similarity-Is-Not-Truth Safeguard)
@@ -219,6 +262,22 @@ export async function classifySentenceVerdict(
     return {
       status: 'AMBER',
       reasoning: 'No relevant source passage found.'
+    };
+  }
+
+  // Fast-path pre-check for directional or numeric contradictions (Invariant 1)
+  const bestPassage = passages[0];
+  if (hasDirectionFlip(sentence, bestPassage.text)) {
+    return {
+      status: 'RED',
+      reasoning: 'Direction word contradiction detected against source passage.'
+    };
+  }
+
+  if (hasNumericConflict(sentence, bestPassage.text) && passages.every(p => hasNumericConflict(sentence, p.text))) {
+    return {
+      status: 'RED',
+      reasoning: 'Numerical discrepancy detected against source passage metrics.'
     };
   }
 

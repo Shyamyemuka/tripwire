@@ -118,7 +118,7 @@ export async function queryMossRetrieval(
       const results = await Promise.race([
         client.query(sessionId, sentenceText, { topK }),
         new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('Moss local query timeout')), 15)
+          setTimeout(() => reject(new Error('Moss query timed out')), 800)
         )
       ]);
       const t1 = performance.now();
