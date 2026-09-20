@@ -88,7 +88,7 @@ export const CinematicLanding: React.FC = () => {
           <Link href="/" onClick={() => setActiveTab("product")} className="flex items-center gap-2.5 group">
             <div className="w-8 h-8 rounded-lg overflow-hidden border border-white/20 bg-black flex items-center justify-center p-0.5 group-hover:border-white/40 transition-colors shrink-0">
               <Image
-                src="/logo.png"
+                src="/icon.png"
                 alt="Tripwire Logo"
                 width={32}
                 height={32}
