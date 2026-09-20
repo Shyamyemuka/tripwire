@@ -13,6 +13,11 @@ export const metadata: Metadata = {
   title: "Tripwire — Real-Time AI Hallucination Detection",
   description:
     "Tripwire sits between a streaming LLM response and the user, verifying individual factual claims against source material in real time using sub-10ms retrieval.",
+  icons: {
+    icon: "/logo.png",
+    shortcut: "/logo.png",
+    apple: "/logo.png",
+  },
 };
 
 export default function RootLayout({
@@ -27,7 +32,7 @@ export default function RootLayout({
       className={`${manrope.variable} h-full antialiased dark`}
     >
       <body
-        className="min-h-full flex flex-col bg-[#05070A] text-[#F5F7FA] font-sans overflow-x-hidden selection:bg-[#38BDF8]/20 selection:text-[#38BDF8]"
+        className="min-h-full flex flex-col bg-[#05070A] text-[#F5F7FA] font-sans overflow-x-hidden selection:bg-white/20 selection:text-white"
         suppressHydrationWarning
       >
         {children}
