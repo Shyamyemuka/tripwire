@@ -135,8 +135,14 @@ Neutral, factual, concise. No filler sentences like "This is an
 interesting question" — every sentence should carry either an answer or
 an explicit statement that the document doesn't cover something.`;
 
+  // Budget document text so prompt stays safely within HiDevs' 4,000 token limit
+  const maxDocChars = 9000; // ~2,250 tokens
+  const budgetedDocText = documentText.length > maxDocChars
+    ? documentText.slice(0, maxDocChars) + "\n\n[... Note: document text budgeted to fit token limit ...]"
+    : documentText;
+
   const prompt = `DOCUMENT:
-${documentText}
+${budgetedDocText}
 
 QUESTION:
 ${question}`;
@@ -144,7 +150,7 @@ ${question}`;
   // 1. Primary: HiDevs LLM Gateway (100k Credits for Hackathon Arena)
   if (hidevsKey) {
     try {
-      const res = await fetch(`${HIDEVS_BASE_URL}/chat/completions`, {
+      let res = await fetch(`${HIDEVS_BASE_URL}/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -156,10 +162,33 @@ ${question}`;
             { role: 'system', content: systemInstruction },
             { role: 'user', content: prompt }
           ],
+          max_tokens: 600,
           temperature: 0.2,
           stream: true
         })
       });
+
+      // If primary model hits a 429 per-minute rate limit, retry with gemini-3.5-flash-lite
+      if (!res.ok && res.status === 429 && GENERATION_MODEL !== 'gemini-3.5-flash-lite') {
+        console.warn('HiDevs 429 on primary model, retrying with gemini-3.5-flash-lite...');
+        res = await fetch(`${HIDEVS_BASE_URL}/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${hidevsKey}`
+          },
+          body: JSON.stringify({
+            model: 'gemini-3.5-flash-lite',
+            messages: [
+              { role: 'system', content: systemInstruction },
+              { role: 'user', content: prompt }
+            ],
+            max_tokens: 500,
+            temperature: 0.2,
+            stream: true
+          })
+        });
+      }
 
       if (!res.ok) {
         const errBody = await res.text().catch(() => '');
@@ -409,7 +438,7 @@ ANSWER:`;
   if (hidevsKey) {
     try {
       const t0 = performance.now();
-      const res = await fetch(`${HIDEVS_BASE_URL}/chat/completions`, {
+      let res = await fetch(`${HIDEVS_BASE_URL}/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -420,10 +449,30 @@ ANSWER:`;
           messages: [
             { role: 'user', content: prompt }
           ],
+          max_tokens: 15,
           temperature: 0.0,
           stream: false
         })
       });
+
+      if (!res.ok && res.status === 429 && VERDICT_MODEL !== 'gemini-3.5-flash-lite') {
+        res = await fetch(`${HIDEVS_BASE_URL}/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${hidevsKey}`
+          },
+          body: JSON.stringify({
+            model: 'gemini-3.5-flash-lite',
+            messages: [
+              { role: 'user', content: prompt }
+            ],
+            max_tokens: 15,
+            temperature: 0.0,
+            stream: false
+          })
+        });
+      }
 
       if (!res.ok) {
         throw new Error(`HiDevs API status ${res.status}`);
@@ -574,7 +623,7 @@ EXPLANATION:`;
   // 1. Primary: HiDevs LLM Gateway (100k Credits for Hackathon Arena)
   if (hidevsKey) {
     try {
-      const res = await fetch(`${HIDEVS_BASE_URL}/chat/completions`, {
+      let res = await fetch(`${HIDEVS_BASE_URL}/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -585,10 +634,30 @@ EXPLANATION:`;
           messages: [
             { role: 'user', content: prompt }
           ],
+          max_tokens: 80,
           temperature: 0.1,
           stream: false
         })
       });
+
+      if (!res.ok && res.status === 429 && EXPLANATION_MODEL !== 'gemini-3.5-flash-lite') {
+        res = await fetch(`${HIDEVS_BASE_URL}/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${hidevsKey}`
+          },
+          body: JSON.stringify({
+            model: 'gemini-3.5-flash-lite',
+            messages: [
+              { role: 'user', content: prompt }
+            ],
+            max_tokens: 80,
+            temperature: 0.1,
+            stream: false
+          })
+        });
+      }
 
       if (res.ok) {
         const data = await res.json();

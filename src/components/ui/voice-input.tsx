@@ -1,7 +1,7 @@
 "use client"
 
 import React from "react"
-import { Mic } from "lucide-react"
+import { Mic, X } from "lucide-react"
 import { AnimatePresence, motion } from "motion/react"
 
 import { cn } from "@/lib/utils"
@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils"
 interface VoiceInputProps {
   onStart?: () => void
   onStop?: () => void
+  onCancel?: () => void
   isRecording?: boolean
 }
 
@@ -16,6 +17,7 @@ export function VoiceInput({
   className,
   onStart,
   onStop,
+  onCancel,
   isRecording,
   ...props
 }: React.ComponentProps<"div"> & VoiceInputProps) {
@@ -92,7 +94,7 @@ export function VoiceInput({
               transition={{
                 duration: 0.4,
               }}
-              className="overflow-hidden flex gap-2 items-center justify-center pr-1"
+              className="overflow-hidden flex gap-2.5 items-center justify-center pr-1"
             >
               {/* Frequency Animation */}
               <div className="flex gap-0.5 items-center justify-center">
@@ -119,6 +121,21 @@ export function VoiceInput({
               <div className="text-xs font-mono text-muted-foreground w-10 text-center">
                 {formatTime(_time)}
               </div>
+              {/* Cancel Button */}
+              {onCancel && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onCancel()
+                    if (isRecording === undefined) setInternalListening(false)
+                  }}
+                  className="p-1 rounded-full text-neutral-400 hover:text-white hover:bg-white/10 transition-colors ml-1"
+                  title="Cancel transcription"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
             </motion.div>
           )}
         </AnimatePresence>

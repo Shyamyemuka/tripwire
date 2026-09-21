@@ -241,58 +241,29 @@ export const QuestionInput: React.FC<QuestionInputProps> = ({
           </div>
         )}
 
-        {/* ACTIVE VOICE RECORDING CONTROL BAR */}
+        {/* ACTIVE VOICE RECORDING / TRANSCRIBING CONTROL BAR */}
         {isRecording || isTranscribing ? (
-          <div className="flex items-center justify-between p-3 sm:p-3.5 rounded-full border border-white/10 bg-white/[0.04] backdrop-blur-xl shadow-[0_4px_20px_rgba(0,0,0,0.5)] animate-fade-in">
-            {/* Left: VoiceInput frequency animation & Timer */}
-            <div className="flex items-center gap-3 pl-2">
-              <VoiceInput 
+          <div className="flex items-center justify-center p-2 rounded-full border border-white/10 bg-white/[0.04] backdrop-blur-xl shadow-[0_4px_20px_rgba(0,0,0,0.5)] animate-fade-in">
+            {isTranscribing ? (
+              <div className="flex items-center gap-2.5 px-4 py-1 text-xs text-neutral-300 font-medium">
+                <Loader2 className="w-4 h-4 animate-spin text-white" />
+                <span>Transcribing audio...</span>
+                <button
+                  type="button"
+                  onClick={handleCancelRecording}
+                  className="p-1 rounded-full text-neutral-400 hover:text-white hover:bg-white/10 transition-colors ml-1"
+                  title="Cancel transcription"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ) : (
+              <VoiceInput
                 isRecording={isRecording}
                 onStop={handleDoneAndTranscribe}
+                onCancel={handleCancelRecording}
               />
-              <div className="flex flex-col">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold text-white tracking-wide">
-                    {isTranscribing ? "Transcribing Audio..." : "Voice Recording Active"}
-                  </span>
-                </div>
-                <span className="text-[10px] text-neutral-400 hidden sm:inline">
-                  {isTranscribing ? "Processing transcription..." : "Speak your question, then click 'OK / Transcribe'"}
-                </span>
-              </div>
-            </div>
-
-            {/* Right: Actions (Cancel & Done/OK) */}
-            <div className="flex items-center gap-2 pr-1">
-              <button
-                type="button"
-                onClick={handleCancelRecording}
-                disabled={isTranscribing}
-                className="p-2 rounded-full text-neutral-400 hover:text-white hover:bg-white/10 transition-all text-xs"
-                title="Cancel voice recording"
-              >
-                <X className="w-4 h-4" />
-              </button>
-
-              <button
-                type="button"
-                onClick={handleDoneAndTranscribe}
-                disabled={isTranscribing}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-white hover:bg-neutral-200 text-black text-xs font-semibold shadow-sm transition-all tactile-btn"
-              >
-                {isTranscribing ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin text-black" />
-                    <span>Transcribing...</span>
-                  </>
-                ) : (
-                  <>
-                    <Check className="w-3.5 h-3.5 text-black" />
-                    <span>OK / Transcribe</span>
-                  </>
-                )}
-              </button>
-            </div>
+            )}
           </div>
         ) : (
           /* STANDARD TEXT INPUT WITH VOICEINPUT BUTTON */
