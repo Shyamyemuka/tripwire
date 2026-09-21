@@ -1,6 +1,10 @@
 @import "tailwindcss";
 
 :root {
+  --primary: #FFFFFF;
+  --primary-foreground: #000000;
+  --muted-foreground: #8A8177;
+
   --bg: #000000;
   --bg-deep: #000000;
   --surface: #080808;
@@ -37,6 +41,9 @@
 
 @theme inline {
   --font-sans: var(--font-manrope), "Manrope", system-ui, sans-serif;
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-muted-foreground: var(--muted-foreground);
   --color-bg: var(--bg);
   --color-bg-deep: var(--bg-deep);
   --color-surface: var(--surface);

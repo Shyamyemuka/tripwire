@@ -24,15 +24,18 @@ export async function POST(req: NextRequest) {
 
     // 1. If Deepgram API key is configured, use Deepgram Nova-2 for sub-100ms transcription
     const deepgramKey = process.env.DEEPGRAM_API_KEY;
-    if (deepgramKey && !deepgramKey.startsWith('your_deepgram')) {
+    if (deepgramKey && !deepgramKey.startsWith('your_deepgram') && deepgramKey.trim().length > 0) {
       try {
+        const buffer = Buffer.from(arrayBuffer);
         const dgRes = await fetch('https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true', {
           method: 'POST',
           headers: {
-            'Authorization': `Token ${deepgramKey}`,
+            'Authorization': `Token ${deepgramKey.trim()}`,
             'Content-Type': mimeType,
+            'Content-Length': buffer.length.toString(),
           },
-          body: arrayBuffer,
+          body: buffer,
+          signal: AbortSignal.timeout(8000),
         });
 
         if (dgRes.ok) {
@@ -42,17 +45,20 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ transcript: transcript.trim(), provider: 'deepgram' });
           }
         } else {
-          console.warn('Deepgram returned non-200, falling back to Gemini:', await dgRes.text().catch(() => ''));
+          console.warn('Deepgram returned non-200, checking fallback:', await dgRes.text().catch(() => ''));
         }
       } catch (dgErr) {
-        console.warn('Deepgram transcription request failed, falling back to Gemini:', dgErr);
+        console.warn('Deepgram transcription request failed, checking fallback:', dgErr);
       }
     }
 
     // 2. Fallback to Gemini Multimodal Audio Transcription
     const keys = getAvailableGeminiKeys();
     if (keys.length === 0) {
-      return NextResponse.json({ error: 'Neither Deepgram nor Gemini API key is configured.' }, { status: 500 });
+      return NextResponse.json({ 
+        error: 'Voice transcription failed. Deepgram timed out and no Gemini API key is configured.',
+        transcript: '' 
+      }, { status: 200 });
     }
 
     const base64Data = Buffer.from(arrayBuffer).toString('base64');
@@ -61,7 +67,7 @@ export async function POST(req: NextRequest) {
     for (let i = 0; i < keys.length; i++) {
       try {
         const client = new GoogleGenAI({ apiKey: keys[i] });
-        const response = await client.models.generateContent({
+        const generatePromise = client.models.generateContent({
           model: process.env.GEMINI_GENERATION_MODEL || 'gemini-2.5-flash',
           contents: [
             {
@@ -77,15 +83,23 @@ export async function POST(req: NextRequest) {
           },
         });
 
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Gemini transcribe request timed out after 5s')), 5000)
+        );
+
+        const response = await Promise.race([generatePromise, timeoutPromise]);
         const transcript = (response.text || '').trim();
         return NextResponse.json({ transcript, provider: 'gemini' });
       } catch (err) {
         lastError = err;
-        console.warn(`[Transcribe Failover] Key #${i + 1} failed:`, err);
+        console.warn(`[Transcribe Failover] Key #${i + 1} failed:`, err instanceof Error ? err.message : err);
       }
     }
 
-    throw lastError;
+    return NextResponse.json({ 
+      error: 'Audio transcription timed out across providers.',
+      transcript: '' 
+    }, { status: 200 });
   } catch (err: unknown) {
     console.error('Audio transcription error:', err);
     const message = err instanceof Error ? err.message : 'Transcription failed.';

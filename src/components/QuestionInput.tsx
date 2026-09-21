@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { ArrowUp, Loader2, Mic, Check, X } from "lucide-react";
+import { VoiceInput } from "@/components/ui/voice-input";
 
 interface QuestionInputProps {
   onSubmitQuestion: (question: string) => void;
@@ -243,18 +244,16 @@ export const QuestionInput: React.FC<QuestionInputProps> = ({
         {/* ACTIVE VOICE RECORDING CONTROL BAR */}
         {isRecording || isTranscribing ? (
           <div className="flex items-center justify-between p-3 sm:p-3.5 rounded-full border border-white/10 bg-white/[0.04] backdrop-blur-xl shadow-[0_4px_20px_rgba(0,0,0,0.5)] animate-fade-in">
-            {/* Left: Recording indicator, Timer, Status */}
-            <div className="flex items-center gap-3 pl-3">
-              <div className="relative flex items-center justify-center">
-                <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
-              </div>
+            {/* Left: VoiceInput frequency animation & Timer */}
+            <div className="flex items-center gap-3 pl-2">
+              <VoiceInput 
+                isRecording={isRecording}
+                onStop={handleDoneAndTranscribe}
+              />
               <div className="flex flex-col">
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-semibold text-white tracking-wide">
                     {isTranscribing ? "Transcribing Audio..." : "Voice Recording Active"}
-                  </span>
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-white/10 text-neutral-200 border border-white/15">
-                    {formatDuration(recordingSeconds)}
                   </span>
                 </div>
                 <span className="text-[10px] text-neutral-400 hidden sm:inline">
@@ -296,7 +295,7 @@ export const QuestionInput: React.FC<QuestionInputProps> = ({
             </div>
           </div>
         ) : (
-          /* STANDARD TEXT INPUT WITH MIC BUTTON */
+          /* STANDARD TEXT INPUT WITH VOICEINPUT BUTTON */
           <form onSubmit={handleSubmit} className="relative flex items-center">
             <input
               type="text"
@@ -311,27 +310,22 @@ export const QuestionInput: React.FC<QuestionInputProps> = ({
                   ? "Answer streaming & verifying claim by claim..."
                   : "Ask a question or click the mic to speak..."
               }
-              className="w-full pl-5 pr-24 py-3.5 rounded-full border border-white/10 bg-white/[0.03] text-sm text-white placeholder-white/40 focus:outline-hidden focus:border-white/40 focus:ring-1 focus:ring-white/20 shadow-[0_4px_20px_rgba(0,0,0,0.5)] disabled:opacity-50 transition-all font-sans"
+              className="w-full pl-5 pr-28 py-3.5 rounded-full border border-white/10 bg-white/[0.03] text-sm text-white placeholder-white/40 focus:outline-hidden focus:border-white/40 focus:ring-1 focus:ring-white/20 shadow-[0_4px_20px_rgba(0,0,0,0.5)] disabled:opacity-50 transition-all font-sans"
             />
 
             <div className="absolute right-2 flex items-center gap-1.5">
-              {/* Mic Button to trigger voice recording */}
-              <button
-                type="button"
-                onClick={startVoiceRecording}
-                disabled={isStreaming || isTranscribing}
-                title="Voice Input (LiveKit & Speech)"
-                className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-neutral-300 hover:text-white transition-all flex items-center justify-center"
-              >
-                <Mic className="w-4 h-4" />
-              </button>
+              {/* VoiceInput Mic Button */}
+              <VoiceInput
+                onStart={startVoiceRecording}
+                isRecording={false}
+              />
 
               {/* Submit Button */}
               <button
                 type="submit"
                 disabled={!question.trim() || isStreaming || isTranscribing}
                 aria-label="Submit Question"
-                className="p-2 rounded-full bg-white text-black hover:bg-neutral-200 disabled:opacity-30 disabled:hover:bg-white transition-all tactile-btn flex items-center justify-center shadow-sm"
+                className="p-2.5 rounded-full bg-white text-black hover:bg-neutral-200 disabled:opacity-30 disabled:hover:bg-white transition-all tactile-btn flex items-center justify-center shadow-sm"
               >
                 {isStreaming ? (
                   <Loader2 className="w-4 h-4 animate-spin text-black" />
