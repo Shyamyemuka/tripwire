@@ -279,10 +279,10 @@ function AgentWorkspace() {
 
       const detector = new SentenceDetector();
 
-      // Bounded concurrency queue (concurrency = 2) to prevent browser HTTP connection pool saturation and Gemini RPM limits
+      // Sequential verification (concurrency = 1) prevents gateway rate-limit spikes (429) across token windows
       const verificationQueue: Array<{ sId: string; sText: string }> = [];
       let activeVerifications = 0;
-      const MAX_CONCURRENT_VERIFICATIONS = 2;
+      const MAX_CONCURRENT_VERIFICATIONS = 1;
 
       // Invariant 2: Each sentence issues its own fresh independent query
       const verifySentence = async (sId: string, sText: string, retryCount = 0): Promise<void> => {
@@ -347,20 +347,19 @@ function AgentWorkspace() {
             }, 4500);
           }
 
-          // FR-10: Non-blocking asynchronous explanation for RED or AMBER claims
-          if (data.status === "RED" || data.status === "AMBER") {
-            if (data.matchedChunkText) {
-              fetch("/api/explain", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  sentence: sText,
-                  matchedPassageText: data.matchedChunkText,
-                  status: data.status,
-                  turnId,
-                  sentenceId: sId,
-                }),
-              })
+          // FR-10: Non-blocking asynchronous explanation for RED contradictions (conserves token budget during stream)
+          if (data.status === "RED" && data.matchedChunkText) {
+            fetch("/api/explain", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                sentence: sText,
+                matchedPassageText: data.matchedChunkText,
+                status: data.status,
+                turnId,
+                sentenceId: sId,
+              }),
+            })
                 .then((r) => r.json())
                 .then((explData) => {
                   if (explData.explanation) {
@@ -385,7 +384,6 @@ function AgentWorkspace() {
                 .catch(() => {
                   // Non-blocking explanation failure, silently ignored per FR-10
                 });
-            }
           }
         } catch (err) {
           // If network connection hiccup occurred, retry once before failing
@@ -435,10 +433,16 @@ function AgentWorkspace() {
 
       let sentenceCounter = 0;
 
-      const appendSentence = (text: string) => {
-        // Strip leading/trailing decorative symbols or em dashes
-        const cleanText = text.replace(/^[\s—–\-*•#]+/, '').replace(/[\s—–\-]+$/, '').trim();
-        const letters = cleanText.replace(/[^a-zA-Z]/g, '');
+      const appendSentence = (rawText: string) => {
+        const displayText = rawText.trim();
+        // Sanitize leading numbered prefixes (e.g. "1. ", "2. **") for clean claim classification
+        const verificationClaim = displayText
+          .replace(/^[\s—–\-*•#]+/, '')
+          .replace(/^\d+\.\s*(?:\*\*)?/, '')
+          .replace(/[\s—–\-]+$/, '')
+          .trim();
+
+        const letters = verificationClaim.replace(/[^a-zA-Z]/g, '');
         if (letters.length < 2) {
           // Do not verify decorative em dashes, bullet characters, or standalone numbers as claims
           return;
@@ -447,7 +451,7 @@ function AgentWorkspace() {
         const sentenceId = `${turnId}-s-${sentenceCounter++}`;
         const record: SentenceVerificationRecord = {
           sentenceId,
-          text: cleanText,
+          text: displayText,
           status: "PENDING",
           matchedChunkId: null,
           matchedChunkText: null,
@@ -468,7 +472,7 @@ function AgentWorkspace() {
         );
 
         // Dispatch async verification via bounded concurrency queue
-        enqueueVerification(sentenceId, cleanText);
+        enqueueVerification(sentenceId, verificationClaim);
       };
 
       try {
