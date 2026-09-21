@@ -1,5 +1,16 @@
 import { GoogleGenAI } from '@google/genai';
 import { CandidatePassage, VerificationStatus } from './types';
+import crypto from 'crypto';
+
+export const HIDEVS_BASE_URL = process.env.HIDEVS_BASE_URL || 'https://llm.hidevs.xyz/v1';
+
+export function getHiDevsApiKey(): string | null {
+  const key = process.env.HIDEVS_API_KEY;
+  if (key && !key.startsWith('your_') && key.trim().length > 0) {
+    return key.trim();
+  }
+  return null;
+}
 
 function getAvailableGeminiKeys(): string[] {
   const keys = [
@@ -80,8 +91,8 @@ async function callGeminiWithFailover<T>(
 }
 
 export const GENERATION_MODEL = process.env.GEMINI_GENERATION_MODEL || 'gemini-3.6-flash';
-export const VERDICT_MODEL = process.env.GEMINI_VERDICT_MODEL || 'gemini-3.1-flash-lite';
-export const EXPLANATION_MODEL = process.env.GEMINI_EXPLANATION_MODEL || 'gemini-3.1-flash-lite';
+export const VERDICT_MODEL = process.env.GEMINI_VERDICT_MODEL || 'gemini-3.5-flash-lite';
+export const EXPLANATION_MODEL = process.env.GEMINI_EXPLANATION_MODEL || 'gemini-3.5-flash-lite';
 export const EMBEDDING_MODEL = process.env.GEMINI_EMBEDDING_MODEL || 'gemini-embedding-2';
 
 /**
@@ -91,9 +102,11 @@ export async function* streamAnswerGeneration(
   question: string,
   documentText: string
 ): AsyncGenerator<string, void, unknown> {
+  const hidevsKey = getHiDevsApiKey();
   const keys = getAvailableGeminiKeys();
-  if (keys.length === 0) {
-    throw new Error('GEMINI_API_KEY_1 or GEMINI_API_KEY_2 is not configured in .env. Please add your key from https://aistudio.google.com/');
+
+  if (!hidevsKey && keys.length === 0) {
+    throw new Error('HIDEVS_API_KEY or GEMINI_API_KEY is not configured in .env. Please check your keys.');
   }
 
   const systemInstruction = `[Context]
@@ -128,7 +141,72 @@ ${documentText}
 QUESTION:
 ${question}`;
 
-  // Candidate models: primary generation model, fallback to verdict model if 503 high demand spike occurs
+  // 1. Primary: HiDevs LLM Gateway (100k Credits for Hackathon Arena)
+  if (hidevsKey) {
+    try {
+      const res = await fetch(`${HIDEVS_BASE_URL}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${hidevsKey}`
+        },
+        body: JSON.stringify({
+          model: GENERATION_MODEL,
+          messages: [
+            { role: 'system', content: systemInstruction },
+            { role: 'user', content: prompt }
+          ],
+          temperature: 0.2,
+          stream: true
+        })
+      });
+
+      if (!res.ok) {
+        const errBody = await res.text().catch(() => '');
+        throw new Error(`HiDevs API error (${res.status}): ${errBody}`);
+      }
+
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error('Could not open stream from HiDevs gateway');
+
+      const decoder = new TextDecoder('utf-8');
+      let sseBuffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        sseBuffer += decoder.decode(value, { stream: true });
+        const lines = sseBuffer.split('\n');
+        sseBuffer = lines.pop() || '';
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || !trimmed.startsWith('data:')) continue;
+          const dataStr = trimmed.replace(/^data:\s*/, '').trim();
+          if (dataStr === '[DONE]') return;
+          try {
+            const parsed = JSON.parse(dataStr);
+            const token = parsed.choices?.[0]?.delta?.content;
+            if (token) {
+              yield token;
+            }
+          } catch {
+            // ignore non-json ping/comment lines
+          }
+        }
+      }
+      return;
+    } catch (hidevsErr) {
+      console.warn('HiDevs stream failed, checking fallback:', hidevsErr);
+      if (keys.length === 0) {
+        const cleanMsg = parseFriendlyErrorMessage(hidevsErr);
+        throw new Error(cleanMsg);
+      }
+    }
+  }
+
+  // 2. Direct Gemini Multi-Key Failover
   const candidateModels = [
     GENERATION_MODEL,
     VERDICT_MODEL !== GENERATION_MODEL ? VERDICT_MODEL : null
@@ -200,55 +278,9 @@ export interface VerdictResult {
   reasoning: string;
 }
 
-const UPWARD_DIRECTION_REGEX = /\b(increased?|rose|risen|grow(n|ing)?|grew|growth|higher|up|expanded?|gain(ed)?|surplus|soared|accelerated?)\b/i;
-const DOWNWARD_DIRECTION_REGEX = /\b(decreased?|fell|fall(en|ing)?|shrank|declined?|decline|lower|down|contracted?|loss(es)?|lost|deficit|compressed?|plunged|slowed)\b/i;
-
-/**
- * Defensive check for directional contradiction between sentence and passage
- */
-function hasDirectionFlip(sentence: string, passageText: string): boolean {
-  const sUp = UPWARD_DIRECTION_REGEX.test(sentence);
-  const sDown = DOWNWARD_DIRECTION_REGEX.test(sentence);
-  const pUp = UPWARD_DIRECTION_REGEX.test(passageText);
-  const pDown = DOWNWARD_DIRECTION_REGEX.test(passageText);
-
-  if (sUp && pDown && !pUp) return true;
-  if (sDown && pUp && !pDown) return true;
-  return false;
-}
-
-/**
- * Defensive check for conflicting numbers, dollar amounts, or percentages on shared metrics
- */
-function hasNumericConflict(sentence: string, passageText: string): boolean {
-  const sentPercents: string[] = (sentence.match(/\b\d+(\.\d+)?%/g) || []).map(p => p.toLowerCase());
-  const passPercents: string[] = (passageText.match(/\b\d+(\.\d+)?%/g) || []).map(p => p.toLowerCase());
-
-  if (sentPercents.length > 0 && passPercents.length > 0) {
-    const hasMatch = sentPercents.some(p => passPercents.includes(p));
-    if (!hasMatch) {
-      return true;
-    }
-  }
-
-  const currencyPattern = /\$\s*(\d+(\.\d+)?)\s*(million|billion|thousand|m|b|k)?/gi;
-  const sentCurrencies = Array.from(sentence.matchAll(currencyPattern)).map(m => m[0].replace(/\s+/g, '').toLowerCase());
-  const passCurrencies = Array.from(passageText.matchAll(currencyPattern)).map(m => m[0].replace(/\s+/g, '').toLowerCase());
-
-  if (sentCurrencies.length > 0 && passCurrencies.length > 0) {
-    const hasMatch = sentCurrencies.some(c => passCurrencies.includes(c));
-    if (!hasMatch) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
 /**
  * FR-8: Verdict Classification (The Similarity-Is-Not-Truth Safeguard)
  * Evaluates candidate passages vs. the generated sentence.
- * Must strictly check numbers, dates, directions (increased/decreased, rose/fell), and negations.
  * Invariant 1: Similarity is not truth.
  * Invariant 3: Failure NEVER defaults to GREEN (always AMBER).
  */
@@ -265,25 +297,10 @@ export async function classifySentenceVerdict(
     };
   }
 
-  // Fast-path pre-check for directional or numeric contradictions (Invariant 1)
-  // Check against all retrieved candidate passages: only flag RED if all candidates show a conflict or if top candidate has explicit direction flip
-  const bestPassage = passages[0];
-  if (hasDirectionFlip(sentence, bestPassage.text) && passages.every(p => hasDirectionFlip(sentence, p.text))) {
-    return {
-      status: 'RED',
-      reasoning: 'Direction word contradiction detected against source passages.'
-    };
-  }
-
-  if (hasNumericConflict(sentence, bestPassage.text) && passages.every(p => hasNumericConflict(sentence, p.text))) {
-    return {
-      status: 'RED',
-      reasoning: 'Numerical discrepancy detected against source passage metrics.'
-    };
-  }
-
+  const hidevsKey = getHiDevsApiKey();
   const keys = getAvailableGeminiKeys();
-  if (keys.length === 0) {
+
+  if (!hidevsKey && keys.length === 0) {
     // Offline / unconfigured key fallback:
     // Invariant 1 & 3: Never default to GREEN if numbers exist and are unverified!
     const bestPassage = passages[0];
@@ -388,6 +405,70 @@ SENTENCE: ${sentence}
 ${passagesContext}
 ANSWER:`;
 
+  // 1. Primary: HiDevs LLM Gateway (100k Credits for Hackathon Arena)
+  if (hidevsKey) {
+    try {
+      const t0 = performance.now();
+      const res = await fetch(`${HIDEVS_BASE_URL}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${hidevsKey}`
+        },
+        body: JSON.stringify({
+          model: VERDICT_MODEL,
+          messages: [
+            { role: 'user', content: prompt }
+          ],
+          temperature: 0.0,
+          stream: false
+        })
+      });
+
+      if (!res.ok) {
+        throw new Error(`HiDevs API status ${res.status}`);
+      }
+
+      const data = await res.json();
+      const rawText = data.choices?.[0]?.message?.content || '';
+      const rawVerdictValue = rawText.trim().toUpperCase();
+
+      let status: VerificationStatus = 'AMBER';
+      if (rawVerdictValue.includes('SUPPORTED') && !rawVerdictValue.includes('CONTRADICTED') && !rawVerdictValue.includes('UNVERIFIABLE')) {
+        status = 'GREEN';
+      } else if (rawVerdictValue.includes('CONTRADICTED')) {
+        status = 'RED';
+      } else {
+        status = 'AMBER';
+      }
+
+      const durationMs = Math.round(performance.now() - t0);
+      if (turnId) {
+        console.log(JSON.stringify({
+          traceId: turnId,
+          spanName: "verdict_classification_hidevs",
+          sentenceId: sentenceId || "unknown",
+          durationMs,
+          model: VERDICT_MODEL,
+          timestamp: new Date().toISOString()
+        }));
+      }
+
+      return {
+        status,
+        reasoning: ''
+      };
+    } catch (hidevsErr) {
+      console.warn('HiDevs verdict call failed, checking fallback:', hidevsErr);
+      if (keys.length === 0) {
+        return {
+          status: 'AMBER',
+          reasoning: 'HiDevs API error; defaulted to unverifiable.'
+        };
+      }
+    }
+  }
+
   try {
     const t0 = performance.now();
     return await callGeminiWithFailover(async (client) => {
@@ -447,8 +528,6 @@ ANSWER:`;
  * FR-10: Slow Path Mismatch Explanation (Non-blocking)
  * Fires only for RED or AMBER sentences to give a single-line explanation.
  */
-import crypto from 'crypto';
-
 export async function generateMismatchExplanation(
   sentence: string,
   matchedPassageText: string,
@@ -456,8 +535,10 @@ export async function generateMismatchExplanation(
   turnId?: string,
   sentenceId?: string
 ): Promise<string> {
+  const hidevsKey = getHiDevsApiKey();
   const keys = getAvailableGeminiKeys();
-  if (keys.length === 0) {
+
+  if (!hidevsKey && keys.length === 0) {
     return status === 'RED'
       ? 'Contradiction detected between claim and source text.'
       : 'Source passage does not fully substantiate claim.';
@@ -489,6 +570,37 @@ VERDICT: ${status === 'RED' ? 'CONTRADICTED' : 'UNVERIFIABLE'}
 MATCHED PASSAGE(S): ${matchedPassageText}
 
 EXPLANATION:`;
+
+  // 1. Primary: HiDevs LLM Gateway (100k Credits for Hackathon Arena)
+  if (hidevsKey) {
+    try {
+      const res = await fetch(`${HIDEVS_BASE_URL}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${hidevsKey}`
+        },
+        body: JSON.stringify({
+          model: EXPLANATION_MODEL,
+          messages: [
+            { role: 'user', content: prompt }
+          ],
+          temperature: 0.1,
+          stream: false
+        })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const raw = data.choices?.[0]?.message?.content?.trim() || '';
+        if (raw) {
+          return raw.replace(/^Explanation:\s*/i, '').trim();
+        }
+      }
+    } catch (hidevsErr) {
+      console.warn('HiDevs explanation failed, checking fallback:', hidevsErr);
+    }
+  }
 
   try {
     const t0 = performance.now();

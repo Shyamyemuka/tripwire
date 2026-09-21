@@ -46,22 +46,25 @@ export const AnalyticsModal: React.FC<AnalyticsModalProps> = ({
   });
 
   const checkableClaims = greenCount + redCount + amberCount;
-  const groundednessIndex = checkableClaims > 0 ? Math.round((greenCount / checkableClaims) * 100) : 100;
+  const groundednessIndex = checkableClaims > 0 ? Math.round((greenCount / checkableClaims) * 100) : 0;
 
   const handleCopyTrustStamp = () => {
     const stampText = [
       `🛡️ TRIPWIRE GROUNDEDNESS AUDIT STAMP`,
       `==================================`,
-      `Groundedness Score: ${groundednessIndex}% (${greenCount}/${checkableClaims} claims supported)`,
+      `Groundedness Score: ${checkableClaims > 0 ? `${groundednessIndex}%` : "N/A"} (${greenCount}/${checkableClaims} claims supported)`,
       `Supported: ${greenCount} | Contradicted: ${redCount} | Unverifiable: ${amberCount} | Filtered: ${greyCount}`,
       `Average Moss Retrieval Speed: ${avgRetrievalLatencyMs.toFixed(2)}ms`,
       `Total Claims Verified: ${totalClaimsVerified}`,
       `Verified via Tripwire Real-Time Fact-Checking Engine`
     ].join('\n');
 
-    navigator.clipboard.writeText(stampText);
-    setCopiedBadge(true);
-    setTimeout(() => setCopiedBadge(false), 2000);
+    navigator.clipboard.writeText(stampText).then(() => {
+      setCopiedBadge(true);
+      setTimeout(() => setCopiedBadge(false), 2000);
+    }).catch((err) => {
+      console.warn("Clipboard copy failed:", err);
+    });
   };
 
   return (
@@ -81,6 +84,7 @@ export const AnalyticsModal: React.FC<AnalyticsModalProps> = ({
           </div>
           <button
             onClick={onClose}
+            aria-label="Close scorecard"
             className="p-1 rounded-lg text-neutral-400 hover:text-white hover:bg-white/5 transition-colors"
           >
             <X className="w-4 h-4" />
@@ -94,9 +98,13 @@ export const AnalyticsModal: React.FC<AnalyticsModalProps> = ({
               Groundedness Index
             </div>
             <div className="text-3xl font-bold text-white flex items-baseline gap-2 font-mono">
-              <span>{groundednessIndex}%</span>
+              <span>{checkableClaims > 0 ? `${groundednessIndex}%` : "—"}</span>
               <span className="text-xs text-emerald-400 font-sans font-medium">
-                {groundednessIndex >= 80 ? "High Fidelity" : "Flagged Discrepancies"}
+                {checkableClaims === 0
+                  ? "No claims verified yet"
+                  : groundednessIndex >= 80
+                  ? "High Fidelity"
+                  : "Flagged Discrepancies"}
               </span>
             </div>
           </div>

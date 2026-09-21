@@ -38,18 +38,44 @@ export async function POST(req: NextRequest) {
         try {
           const tokenGenerator = streamAnswerGeneration(question, documentText);
 
-          for await (let token of tokenGenerator) {
-            // Adversarial Stress-Test Injection: If stress test mode is enabled, deliberately inject a subtle hallucination
-            if (isStressTestMode) {
-              if (token.includes('increased')) token = token.replace('increased', 'decreased significantly');
-              else if (token.includes('grew')) token = token.replace('grew', 'declined sharply');
-              else if (token.includes('rose')) token = token.replace('rose', 'fell by 40%');
-              else if (token.includes('10%')) token = token.replace('10%', '85%');
-              else if (token.includes('$45 million')) token = token.replace('$45 million', '$2.1 million');
+          let streamBuffer = '';
+          const applyMutations = (text: string) => {
+            return text
+              .replace(/\bincreased\b/gi, 'decreased significantly')
+              .replace(/\bgrew\b/gi, 'declined sharply')
+              .replace(/\brose\b/gi, 'fell by 40%')
+              .replace(/\b10%\b/g, '85%')
+              .replace(/\$45\s*million\b/gi, '$2.1 million');
+          };
+
+          for await (const chunk of tokenGenerator) {
+            if (!isStressTestMode) {
+              const payload = JSON.stringify({ token: chunk });
+              controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
+              continue;
             }
 
-            const payload = JSON.stringify({ token });
-            controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
+            streamBuffer += chunk;
+            // Buffer until whitespace or punctuation boundary to ensure whole-word mutations
+            const boundaryIdx = Math.max(
+              streamBuffer.lastIndexOf(' '),
+              streamBuffer.lastIndexOf('\n'),
+              streamBuffer.lastIndexOf('.'),
+              streamBuffer.lastIndexOf(',')
+            );
+
+            if (boundaryIdx !== -1) {
+              const readyChunk = streamBuffer.slice(0, boundaryIdx + 1);
+              streamBuffer = streamBuffer.slice(boundaryIdx + 1);
+              const mutated = applyMutations(readyChunk);
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ token: mutated })}\n\n`));
+            }
+          }
+
+          // Flush any remaining buffered tokens at the end of the stream
+          if (isStressTestMode && streamBuffer.length > 0) {
+            const mutated = applyMutations(streamBuffer);
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ token: mutated })}\n\n`));
           }
 
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true })}\n\n`));

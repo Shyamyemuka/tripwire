@@ -40,14 +40,22 @@ function AgentWorkspace() {
   const [isStressTestMode, setIsStressTestMode] = useState<boolean>(false);
   const [isAnalyticsOpen, setIsAnalyticsOpen] = useState<boolean>(false);
   const [activeInterventionNotice, setActiveInterventionNotice] = useState<string | null>(null);
+  const interventionTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
 
-  // Web Audio API contradiction alert chime (no external audio files needed)
+  // Web Audio API contradiction alert chime (reusing a single AudioContext)
   const triggerAudioAlert = useCallback(() => {
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       if (!AudioCtx) return;
-      const ctx = new AudioCtx();
+      if (!audioCtxRef.current || audioCtxRef.current.state === "closed") {
+        audioCtxRef.current = new AudioCtx();
+      }
+      const ctx = audioCtxRef.current;
+      if (ctx.state === "suspended") {
+        ctx.resume();
+      }
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
 
@@ -66,6 +74,17 @@ function AgentWorkspace() {
     } catch {
       // Audio context permission or browser policy ignore
     }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (interventionTimerRef.current) {
+        clearTimeout(interventionTimerRef.current);
+      }
+      if (audioCtxRef.current && audioCtxRef.current.state !== "closed") {
+        audioCtxRef.current.close().catch(() => {});
+      }
+    };
   }, []);
 
   const [selectedSentence, setSelectedSentence] =
@@ -320,7 +339,10 @@ function AgentWorkspace() {
           if (data.status === "RED") {
             triggerAudioAlert();
             setActiveInterventionNotice(`Contradiction caught: "${sText.slice(0, 60)}..."`);
-            setTimeout(() => {
+            if (interventionTimerRef.current) {
+              clearTimeout(interventionTimerRef.current);
+            }
+            interventionTimerRef.current = setTimeout(() => {
               setActiveInterventionNotice(null);
             }, 4500);
           }

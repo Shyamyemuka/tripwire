@@ -211,7 +211,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                   />
                   <path
                     className={mode === "moss" ? "text-emerald-400" : "text-amber-400"}
-                    strokeDasharray={`${Math.min(100, Math.max(10, 100 - (lastRetrievalLatencyMs || 0) * 2))}, 100`}
+                    strokeDasharray={`${lastRetrievalLatencyMs !== null ? Math.min(100, Math.max(10, 100 - (lastRetrievalLatencyMs || 0) * 2)) : 0}, 100`}
                     strokeWidth="3.5"
                     strokeLinecap="round"
                     stroke="currentColor"
@@ -227,9 +227,11 @@ export const TopBar: React.FC<TopBarProps> = ({
                   <span className={mode === "moss" ? "text-emerald-400" : "text-amber-400"}>
                     {lastRetrievalLatencyMs !== null
                       ? `${lastRetrievalLatencyMs < 1 ? "<1.0" : lastRetrievalLatencyMs.toFixed(1)}ms`
-                      : "0.1ms"}
+                      : "—"}
                   </span>
-                  <span className="text-[9px] text-neutral-400 font-sans uppercase">Speed</span>
+                  <span className="text-[9px] text-neutral-400 font-sans uppercase">
+                    {mode === "moss" ? "Moss" : "Baseline"}
+                  </span>
                 </div>
                 <div className="text-[9.5px] text-neutral-400 font-mono">
                   {totalClaimsVerified} claims · avg {avgRetrievalLatencyMs.toFixed(1)}ms

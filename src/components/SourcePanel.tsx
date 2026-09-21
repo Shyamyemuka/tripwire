@@ -36,9 +36,12 @@ export const SourcePanel: React.FC<SourcePanelProps> = ({
   if (!sentenceRecord) return null;
 
   const handleCopySnippet = (text: string, id: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedSnippet(id);
-    setTimeout(() => setCopiedSnippet(null), 2000);
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedSnippet(id);
+      setTimeout(() => setCopiedSnippet(null), 2000);
+    }).catch((err) => {
+      console.warn("Clipboard copy failed:", err);
+    });
   };
 
   const getVerdictBadge = () => {

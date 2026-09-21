@@ -171,27 +171,33 @@ export async function queryMossRetrieval(
   const filteredTokens = rawTokens.filter(t => !STOPWORDS.has(t));
   const queryTokens = filteredTokens.length > 0 ? filteredTokens : rawTokens;
 
-  // Optimized single-pass index scan over session chunks
-  const scored: Array<{ chunk: ChunkRecord; score: number }> = [];
+  // Single-pass bounded top-K selection with whole-word matching
+  const topMatches: Array<{ chunk: ChunkRecord; score: number }> = [];
   const totalQueryTokens = queryTokens.length || 1;
 
   for (const chunk of chunkMap.values()) {
-    const chunkTextLower = chunk.text.toLowerCase();
+    const chunkWords = chunk.text.toLowerCase().match(/\b[a-z0-9_]{2,}\b/g) || [];
+    const chunkWordSet = new Set(chunkWords);
     let matches = 0;
     for (let i = 0; i < queryTokens.length; i++) {
-      if (chunkTextLower.includes(queryTokens[i])) {
+      if (chunkWordSet.has(queryTokens[i])) {
         matches++;
       }
     }
     const score = matches / totalQueryTokens;
-    scored.push({ chunk, score });
+
+    // Bounded top-K maintenance (size at most topK, O(N * topK))
+    if (topMatches.length < topK) {
+      topMatches.push({ chunk, score });
+      topMatches.sort((a, b) => b.score - a.score);
+    } else if (score > topMatches[topMatches.length - 1].score) {
+      topMatches[topMatches.length - 1] = { chunk, score };
+      topMatches.sort((a, b) => b.score - a.score);
+    }
   }
 
-  // Fast topK partial sort
-  scored.sort((a, b) => b.score - a.score);
-  const topMatches = scored.slice(0, topK);
   const t1 = performance.now();
-  const elapsed = Math.max(0.08, Number((t1 - t0).toFixed(2)));
+  const elapsed = Number((t1 - t0).toFixed(2));
 
   const candidates: CandidatePassage[] = topMatches.map(m => ({
     chunkId: m.chunk.chunkId,
