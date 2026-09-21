@@ -196,8 +196,8 @@ export const SourcePanel: React.FC<SourcePanelProps> = ({
                     }`}
                   >
                     <div className="flex items-center justify-between text-[11px] text-neutral-400 font-mono border-b border-white/[0.08] pb-2 mb-2.5">
-                      <span className="text-neutral-300">
-                        Page {cand.pageNumber} · Offset {cand.charOffsetStart}–{cand.charOffsetEnd}
+                      <span className="text-neutral-300 truncate mr-2">
+                        {cand.documentName ? `${cand.documentName} · ` : ""}Page {cand.pageNumber} · Offset {cand.charOffsetStart}–{cand.charOffsetEnd}
                       </span>
                       <div className="flex items-center gap-2">
                         <span className="text-emerald-400 font-medium">

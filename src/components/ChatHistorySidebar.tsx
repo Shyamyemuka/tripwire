@@ -184,7 +184,11 @@ export const ChatHistorySidebar: React.FC<ChatHistorySidebarProps> = ({
 
                   <div className="mt-2.5 flex items-center justify-between text-[10px] text-neutral-500 font-mono">
                     <div className="flex items-center gap-2">
-                      <span>{item.documentMeta?.pageCount || 1} pgs</span>
+                      <span>
+                        {item.documentMeta?.documents && item.documentMeta.documents.length > 1
+                          ? `${item.documentMeta.documents.length} docs`
+                          : `${item.documentMeta?.pageCount || 1} pgs`}
+                      </span>
                       <span>·</span>
                       <span>{item.turnCount} {item.turnCount === 1 ? "turn" : "turns"}</span>
                     </div>

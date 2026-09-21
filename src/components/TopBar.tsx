@@ -91,16 +91,54 @@ export const TopBar: React.FC<TopBarProps> = ({
             <span className="text-white/20 mx-0.5">|</span>
 
             {/* Document badge */}
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white/[0.04] border border-white/10 text-xs text-neutral-300 max-w-[200px] sm:max-w-[320px]">
-              <FileText className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
-              <span className="truncate font-mono text-[11px] text-white">
-                {documentMeta.filename}
-              </span>
-              <span className="text-white/20">·</span>
-              <span className="text-[10px] text-neutral-400 shrink-0">
-                {documentMeta.pageCount} {documentMeta.pageCount === 1 ? "page" : "pages"}
-              </span>
-            </div>
+            {documentMeta.documents && documentMeta.documents.length > 1 ? (
+              <div className="relative group">
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white/[0.06] hover:bg-white/10 border border-white/15 text-xs text-neutral-200 cursor-pointer transition-all">
+                  <FileText className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <span className="font-mono text-[11px] text-white font-medium">
+                    {documentMeta.documents.length} Documents
+                  </span>
+                  <span className="text-white/20">·</span>
+                  <span className="text-[10px] text-neutral-400 shrink-0 font-mono">
+                    {documentMeta.pageCount} pgs ({documentMeta.wordCount} words)
+                  </span>
+                </div>
+
+                {/* Dropdown Popover on Hover */}
+                <div className="absolute left-0 top-full mt-1.5 w-72 bg-[#0C0C0C] border border-white/15 rounded-xl shadow-2xl p-3 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-all z-50 animate-blur-fade-up">
+                  <div className="text-[10px] font-mono uppercase tracking-wider text-neutral-400 pb-2 border-b border-white/10 flex items-center justify-between">
+                    <span>Indexed Session Files</span>
+                    <span className="text-emerald-400 font-semibold">{documentMeta.documents.length} Total</span>
+                  </div>
+                  <div className="space-y-1.5 pt-2 max-h-48 overflow-y-auto">
+                    {documentMeta.documents.map((doc, idx) => (
+                      <div key={idx} className="p-2 rounded-lg bg-white/[0.03] border border-white/[0.06] text-xs">
+                        <div className="flex items-center justify-between text-white font-mono text-[11px] truncate">
+                          <span className="truncate">{doc.filename}</span>
+                          <span className="text-[10px] text-neutral-400 shrink-0 ml-2">{doc.pageCount} pgs</span>
+                        </div>
+                        {doc.truncated && (
+                          <div className="text-[9.5px] text-amber-400 mt-1 font-mono">
+                            ⚠️ {doc.truncatedPageRange || "Truncated"}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white/[0.04] border border-white/10 text-xs text-neutral-300 max-w-[200px] sm:max-w-[320px]">
+                <FileText className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
+                <span className="truncate font-mono text-[11px] text-white">
+                  {documentMeta.filename}
+                </span>
+                <span className="text-white/20">·</span>
+                <span className="text-[10px] text-neutral-400 shrink-0">
+                  {documentMeta.pageCount} {documentMeta.pageCount === 1 ? "page" : "pages"}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Reset document control */}

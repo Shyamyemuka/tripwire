@@ -133,6 +133,7 @@ export async function queryMossRetrieval(
           pageNumber: meta?.pageNumber || 1,
           charOffsetStart: meta?.charOffsetStart || 0,
           charOffsetEnd: meta?.charOffsetEnd || 0,
+          documentName: meta?.documentName,
           similarityScore: Number(Number(doc.score || 0).toFixed(4))
         };
       });
@@ -205,6 +206,7 @@ export async function queryMossRetrieval(
     pageNumber: m.chunk.pageNumber,
     charOffsetStart: m.chunk.charOffsetStart,
     charOffsetEnd: m.chunk.charOffsetEnd,
+    documentName: m.chunk.documentName,
     similarityScore: Number(m.score.toFixed(4))
   }));
 

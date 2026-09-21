@@ -596,8 +596,18 @@ function AgentWorkspace() {
 
     const reportLines: string[] = [];
     reportLines.push(`# TRIPWIRE VERIFICATION AUDIT REPORT`);
-    reportLines.push(`Document: ${documentMeta.filename} (${documentMeta.pageCount} pages)`);
     reportLines.push(`Generated: ${new Date().toLocaleString()}`);
+
+    if (documentMeta.documents && documentMeta.documents.length > 0) {
+      reportLines.push(`Documents Indexed (${documentMeta.documents.length}):`);
+      documentMeta.documents.forEach((d) => {
+        const truncNote = d.truncated ? ` [Truncated: ${d.truncatedPageRange || "session limit reached"}]` : "";
+        reportLines.push(`  - ${d.filename} (${d.pageCount} pages, ${d.wordCount} words)${truncNote}`);
+      });
+    } else {
+      reportLines.push(`Document: ${documentMeta.filename} (${documentMeta.pageCount} pages, ${documentMeta.wordCount} words)`);
+    }
+
     reportLines.push(`Total Verified Claims: ${totalClaimsVerified}`);
     reportLines.push(`Average Moss Retrieval Latency: ${avgRetrievalLatencyMs.toFixed(2)}ms`);
     reportLines.push(`--------------------------------------------------\n`);
@@ -613,7 +623,11 @@ function AgentWorkspace() {
         if (s.explanation) {
           reportLines.push(`    Explanation: ${s.explanation}`);
         }
-        if (s.matchedChunkText) {
+        if (s.topCandidates && s.topCandidates.length > 0) {
+          const top = s.topCandidates[0];
+          const docName = top.documentName ? `${top.documentName} · ` : "";
+          reportLines.push(`    Candidate Source: [${docName}Page ${top.pageNumber}] "${top.text.slice(0, 120)}..."`);
+        } else if (s.matchedChunkText) {
           reportLines.push(`    Matched Source: "${s.matchedChunkText.slice(0, 150)}..."`);
         }
       });

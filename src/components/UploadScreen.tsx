@@ -33,8 +33,11 @@ export const UploadScreen: React.FC<UploadScreenProps> = ({
   onBackToLanding,
   onOpenHistory,
 }) => {
+  const [stagedFiles, setStagedFiles] = useState<File[]>([]);
+  const [stagedNotes, setStagedNotes] = useState<Array<{ id: string; title: string; text: string }>>([]);
   const [tabMode, setTabMode] = useState<"upload" | "paste">("upload");
   const [pastedText, setPastedText] = useState("");
+  const [pastedTitle, setPastedTitle] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [indexingStep, setIndexingStep] = useState<IndexingStep>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -57,12 +60,72 @@ export const UploadScreen: React.FC<UploadScreenProps> = ({
     }
   };
 
-  const handleProcessFile = async (file: File) => {
+  const MAX_TOTAL_STAGED = 5;
+
+  const handleAddFiles = (files: FileList | File[]) => {
+    setErrorMessage(null);
+    const newFiles: File[] = [];
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const lower = file.name.toLowerCase();
+      if (!lower.endsWith(".pdf") && !lower.endsWith(".txt") && !lower.endsWith(".md")) {
+        setErrorMessage(`"${file.name}" has an unsupported format. Please upload PDF, TXT, or MD files.`);
+        continue;
+      }
+      newFiles.push(file);
+    }
+
+    if (stagedFiles.length + stagedNotes.length + newFiles.length > MAX_TOTAL_STAGED) {
+      setErrorMessage(`Recommended maximum limit is ${MAX_TOTAL_STAGED} files/notes per session.`);
+    }
+
+    setStagedFiles((prev) => [...prev, ...newFiles].slice(0, MAX_TOTAL_STAGED));
+  };
+
+  const handleAddStagedNote = () => {
+    if (!pastedText.trim()) return;
+    if (stagedFiles.length + stagedNotes.length >= MAX_TOTAL_STAGED) {
+      setErrorMessage(`Maximum limit of ${MAX_TOTAL_STAGED} documents reached.`);
+      return;
+    }
+
+    const title = pastedTitle.trim() || `Pasted Note ${stagedNotes.length + 1}`;
+    setStagedNotes((prev) => [
+      ...prev,
+      { id: `note-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, title, text: pastedText },
+    ]);
+    setPastedText("");
+    setPastedTitle("");
+    setErrorMessage(null);
+  };
+
+  const handleRemoveStagedFile = (index: number) => {
+    setStagedFiles((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleRemoveStagedNote = (id: string) => {
+    setStagedNotes((prev) => prev.filter((n) => n.id !== id));
+  };
+
+  const handleStartVerificationSession = async () => {
+    if (stagedFiles.length === 0 && stagedNotes.length === 0) {
+      if (pastedText.trim()) {
+        handleAddStagedNote();
+      } else {
+        setErrorMessage("Please stage at least one file or text note to begin.");
+        return;
+      }
+    }
+
     setErrorMessage(null);
 
     await simulateStepProgress(async () => {
       const formData = new FormData();
-      formData.append("file", file);
+      stagedFiles.forEach((file) => formData.append("files", file));
+      stagedNotes.forEach((note) => {
+        formData.append("pastedTexts", note.text);
+        formData.append("pastedTitles", note.title);
+      });
 
       const res = await fetch("/api/session", {
         method: "POST",
@@ -71,21 +134,18 @@ export const UploadScreen: React.FC<UploadScreenProps> = ({
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || "Failed to process document file.");
+        throw new Error(data.error || "Failed to process documents.");
       }
 
       onDocumentLoaded(data);
     }).catch((err: unknown) => {
-      const msg = err instanceof Error ? err.message : "Error processing document file.";
+      const msg = err instanceof Error ? err.message : "Error processing documents.";
       setErrorMessage(msg);
       setIndexingStep("idle");
     });
   };
 
-  const handleProcessPastedText = async (
-    text: string,
-    title = "pasted-document.txt"
-  ) => {
+  const handleProcessPastedTextSingle = async (text: string, title = "pasted-document.txt") => {
     if (!text.trim()) {
       setErrorMessage("Please paste or provide document text before proceeding.");
       return;
@@ -117,8 +177,7 @@ export const UploadScreen: React.FC<UploadScreenProps> = ({
     e.preventDefault();
     setIsDragOver(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      const file = e.dataTransfer.files[0];
-      handleProcessFile(file);
+      handleAddFiles(e.dataTransfer.files);
     }
   };
 
@@ -268,6 +327,73 @@ export const UploadScreen: React.FC<UploadScreenProps> = ({
             </div>
           )}
 
+          {/* Staging Tray (if files/notes are staged) */}
+          {(stagedFiles.length > 0 || stagedNotes.length > 0) && !isLoading && (
+            <div className="mb-5 p-4 rounded-xl bg-black border border-white/15 space-y-3">
+              <div className="flex items-center justify-between text-xs font-mono text-white border-b border-white/10 pb-2">
+                <span className="flex items-center gap-2 font-semibold">
+                  <FileText className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Staged Documents ({stagedFiles.length + stagedNotes.length}/{MAX_TOTAL_STAGED})</span>
+                </span>
+                <span className="text-[10px] text-neutral-400">Combined Session Budget: ~8,000 words</span>
+              </div>
+
+              <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                {stagedFiles.map((file, idx) => (
+                  <div
+                    key={`file-${idx}`}
+                    className="flex items-center justify-between p-2.5 rounded-lg bg-white/[0.04] border border-white/10 text-xs"
+                  >
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <FileText className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
+                      <span className="text-white font-mono truncate">{file.name}</span>
+                      <span className="text-[10px] text-neutral-500 font-mono">
+                        ({(file.size / 1024).toFixed(1)} KB)
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => handleRemoveStagedFile(idx)}
+                      className="text-neutral-400 hover:text-rose-400 text-xs px-1.5 py-0.5 rounded transition-colors"
+                      title="Remove document"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+
+                {stagedNotes.map((note) => (
+                  <div
+                    key={note.id}
+                    className="flex items-center justify-between p-2.5 rounded-lg bg-white/[0.04] border border-white/10 text-xs"
+                  >
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <FileText className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                      <span className="text-white font-mono truncate">{note.title}</span>
+                      <span className="text-[10px] text-neutral-500 font-mono">
+                        ({note.text.split(/\s+/).filter(Boolean).length} words)
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => handleRemoveStagedNote(note.id)}
+                      className="text-neutral-400 hover:text-rose-400 text-xs px-1.5 py-0.5 rounded transition-colors"
+                      title="Remove note"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              <button
+                onClick={handleStartVerificationSession}
+                className="w-full py-3 px-4 rounded-xl bg-white text-black text-xs font-semibold hover:bg-neutral-200 transition-all flex items-center justify-center gap-2 tactile-btn shadow-md"
+              >
+                <span>Start Verification Session ({stagedFiles.length + stagedNotes.length} {stagedFiles.length + stagedNotes.length === 1 ? "document" : "documents"})</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
           {/* Tab 1: Upload PDF */}
           {tabMode === "upload" && !isLoading && (
             <div
@@ -278,7 +404,7 @@ export const UploadScreen: React.FC<UploadScreenProps> = ({
               onDragLeave={() => setIsDragOver(false)}
               onDrop={handleDrop}
               onClick={() => fileInputRef.current?.click()}
-              className={`w-full border rounded-2xl p-8 text-center cursor-pointer transition-all flex flex-col items-center justify-center min-h-[210px] group ${
+              className={`w-full border rounded-2xl p-8 text-center cursor-pointer transition-all flex flex-col items-center justify-center min-h-[190px] group ${
                 isDragOver
                   ? "border-white/60 bg-white/[0.05]"
                   : "border-dashed border-white/20 hover:border-white/40 hover:bg-white/[0.02] bg-black/40"
@@ -287,11 +413,12 @@ export const UploadScreen: React.FC<UploadScreenProps> = ({
               <input
                 ref={fileInputRef}
                 type="file"
+                multiple
                 accept=".pdf,.txt,.md"
                 className="hidden"
                 onChange={(e) => {
-                  if (e.target.files && e.target.files[0]) {
-                    handleProcessFile(e.target.files[0]);
+                  if (e.target.files && e.target.files.length > 0) {
+                    handleAddFiles(e.target.files);
                   }
                 }}
               />
@@ -299,13 +426,13 @@ export const UploadScreen: React.FC<UploadScreenProps> = ({
                 <UploadCloud className="w-5 h-5" />
               </div>
               <p className="text-sm font-medium text-white">
-                Drop a PDF here
+                Drop PDF, TXT, or MD files here
               </p>
               <p className="text-xs text-neutral-400 mt-1">
-                or browse from your device
+                or browse from your device (upload one or multiple)
               </p>
               <span className="text-[10px] text-neutral-500 mt-2 font-mono">
-                Supports PDF, TXT (up to 20 pages / ~8,000 words)
+                Supports multiple documents (up to 20 pages / ~8,000 words combined)
               </span>
             </div>
           )}
@@ -313,21 +440,43 @@ export const UploadScreen: React.FC<UploadScreenProps> = ({
           {/* Tab 2: Paste Text */}
           {tabMode === "paste" && !isLoading && (
             <div className="w-full flex flex-col gap-3">
+              <input
+                type="text"
+                value={pastedTitle}
+                onChange={(e) => setPastedTitle(e.target.value)}
+                placeholder="Document / Note Title (e.g. Errata Memo, Executive Summary)..."
+                className="w-full px-3.5 py-2 rounded-xl border border-white/10 bg-black text-xs font-mono text-white placeholder-neutral-500 focus:outline-hidden focus:border-white/30 transition-all"
+              />
               <textarea
                 value={pastedText}
                 onChange={(e) => setPastedText(e.target.value)}
                 placeholder="Paste source material here (e.g. quarterly earnings report, legal contract, clinical study, product spec)..."
-                rows={7}
+                rows={6}
                 className="w-full p-3.5 rounded-xl border border-white/10 bg-black text-xs sm:text-sm font-mono text-white placeholder-neutral-500 focus:outline-hidden focus:border-white/30 transition-all resize-none"
               />
-              <button
-                disabled={isLoading || !pastedText.trim()}
-                onClick={() => handleProcessPastedText(pastedText)}
-                className="w-full py-3 px-4 rounded-xl bg-white text-black text-xs font-semibold hover:bg-neutral-200 disabled:opacity-40 transition-all flex items-center justify-center gap-2 tactile-btn shadow-md"
-              >
-                <span>Continue &amp; Start Verification</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  disabled={!pastedText.trim()}
+                  onClick={handleAddStagedNote}
+                  className="flex-1 py-2.5 px-3 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-white text-xs font-medium disabled:opacity-40 transition-all"
+                >
+                  + Stage This Text Note
+                </button>
+                <button
+                  disabled={isLoading || (!pastedText.trim() && stagedFiles.length === 0 && stagedNotes.length === 0)}
+                  onClick={() => {
+                    if (pastedText.trim()) {
+                      handleProcessPastedTextSingle(pastedText, pastedTitle.trim() || "pasted-document.txt");
+                    } else {
+                      handleStartVerificationSession();
+                    }
+                  }}
+                  className="flex-1 py-2.5 px-4 rounded-xl bg-white text-black text-xs font-semibold hover:bg-neutral-200 disabled:opacity-40 transition-all flex items-center justify-center gap-2 tactile-btn shadow-md"
+                >
+                  <span>Start Verification</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
           )}
 
@@ -335,7 +484,7 @@ export const UploadScreen: React.FC<UploadScreenProps> = ({
           <div className="mt-6 pt-5 border-t border-white/[0.08] flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-neutral-400">
             <span className="text-[11px] text-neutral-500">No PDF on hand? Test the reference demo:</span>
             <button
-              onClick={() => handleProcessPastedText(SAMPLE_DOCUMENT_TEXT, SAMPLE_DOCUMENT_TITLE)}
+              onClick={() => handleProcessPastedTextSingle(SAMPLE_DOCUMENT_TEXT, SAMPLE_DOCUMENT_TITLE)}
               disabled={isLoading}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/10 bg-white/[0.04] text-white hover:bg-white/[0.08] hover:border-white/20 transition-all text-xs font-medium tactile-btn"
             >

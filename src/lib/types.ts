@@ -8,6 +8,7 @@ export interface ChunkRecord {
   pageNumber: number;
   charOffsetStart: number;
   charOffsetEnd: number;
+  documentName?: string;
   mossVectorId?: string;
   embedding?: number[];
 }
@@ -18,6 +19,7 @@ export interface CandidatePassage {
   pageNumber: number;
   charOffsetStart: number;
   charOffsetEnd: number;
+  documentName?: string;
   similarityScore: number;
 }
 
@@ -44,12 +46,21 @@ export interface QATurn {
   error?: string | null;
 }
 
+export interface DocumentItem {
+  filename: string;
+  pageCount: number;
+  wordCount: number;
+  truncated: boolean;
+  truncatedPageRange?: string;
+}
+
 export interface DocumentMeta {
   filename: string;
   pageCount: number;
   wordCount: number;
   truncated: boolean;
   truncatedPageRange?: string;
+  documents?: DocumentItem[];
 }
 
 export interface SessionState {
