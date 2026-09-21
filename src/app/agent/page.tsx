@@ -8,6 +8,7 @@ import { QAThread } from "@/components/QAThread";
 import { QuestionInput } from "@/components/QuestionInput";
 import { SourcePanel } from "@/components/SourcePanel";
 import { ChatHistorySidebar } from "@/components/ChatHistorySidebar";
+import { AnalyticsModal } from "@/components/AnalyticsModal";
 import { SentenceDetector } from "@/lib/sentence-boundary";
 import {
   saveConversation,
@@ -36,6 +37,36 @@ function AgentWorkspace() {
   const [mode, setMode] = useState<RetrievalMode>("moss");
   const [isStreaming, setIsStreaming] = useState<boolean>(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState<boolean>(false);
+  const [isStressTestMode, setIsStressTestMode] = useState<boolean>(false);
+  const [isAnalyticsOpen, setIsAnalyticsOpen] = useState<boolean>(false);
+  const [activeInterventionNotice, setActiveInterventionNotice] = useState<string | null>(null);
+
+  // Web Audio API contradiction alert chime (no external audio files needed)
+  const triggerAudioAlert = useCallback(() => {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(440, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(220, ctx.currentTime + 0.25);
+
+      gain.gain.setValueAtTime(0.15, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start();
+      osc.stop(ctx.currentTime + 0.25);
+    } catch {
+      // Audio context permission or browser policy ignore
+    }
+  }, []);
 
   const [selectedSentence, setSelectedSentence] =
     useState<SentenceVerificationRecord | null>(null);
@@ -285,6 +316,15 @@ function AgentWorkspace() {
             setLastRetrievalLatencyMs(data.retrievalLatencyMs);
           }
 
+          // Feature 4: Trigger Audio Alert & Voice Intervention on RED contradiction
+          if (data.status === "RED") {
+            triggerAudioAlert();
+            setActiveInterventionNotice(`Contradiction caught: "${sText.slice(0, 60)}..."`);
+            setTimeout(() => {
+              setActiveInterventionNotice(null);
+            }, 4500);
+          }
+
           // FR-10: Non-blocking asynchronous explanation for RED or AMBER claims
           if (data.status === "RED" || data.status === "AMBER") {
             if (data.matchedChunkText) {
@@ -418,6 +458,7 @@ function AgentWorkspace() {
             documentText: activeDocText,
             sessionId: activeSessionId,
             turnId,
+            isStressTestMode,
           }),
         });
 
@@ -509,7 +550,7 @@ function AgentWorkspace() {
         );
       }
     },
-    [mode]
+    [mode, isStressTestMode, triggerAudioAlert]
   );
 
   // Submit question from user input
@@ -596,7 +637,19 @@ function AgentWorkspace() {
             onBackToLanding={() => router.push("/")}
             onOpenHistory={() => setIsHistoryOpen(true)}
             onExportAuditReport={handleExportAuditReport}
+            isStressTestMode={isStressTestMode}
+            onToggleStressTestMode={() => setIsStressTestMode(prev => !prev)}
+            onOpenAnalytics={() => setIsAnalyticsOpen(true)}
           />
+
+          {/* Feature 4: Floating Voice Intervention Alert Banner */}
+          {activeInterventionNotice && (
+            <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 bg-rose-950/90 border border-rose-500/50 text-rose-200 text-xs px-4 py-2.5 rounded-full shadow-[0_0_30px_rgba(244,63,94,0.3)] backdrop-blur-md flex items-center gap-2 animate-blur-fade-up">
+              <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
+              <span className="font-semibold text-white">🚨 Live Intervention:</span>
+              <span>{activeInterventionNotice}</span>
+            </div>
+          )}
 
           <main className="flex-1 flex flex-col justify-between">
             <QAThread
@@ -620,6 +673,15 @@ function AgentWorkspace() {
               onClose={() => setSelectedSentence(null)}
             />
           )}
+
+          {/* Analytics Modal */}
+          <AnalyticsModal
+            isOpen={isAnalyticsOpen}
+            onClose={() => setIsAnalyticsOpen(false)}
+            qaTurns={qaTurns}
+            totalClaimsVerified={totalClaimsVerified}
+            avgRetrievalLatencyMs={avgRetrievalLatencyMs}
+          />
         </div>
       )}
     </div>

@@ -60,4 +60,5 @@ export interface SessionState {
   mode: RetrievalMode;
   totalClaimsVerified: number;
   avgRetrievalLatencyMs: number;
+  isStressTestMode?: boolean;
 }

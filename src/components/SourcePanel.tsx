@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { SentenceVerificationRecord } from "@/lib/types";
 import {
   X,
@@ -9,6 +9,9 @@ import {
   HelpCircle,
   FileText,
   Clock,
+  Copy,
+  Check,
+  Zap,
 } from "lucide-react";
 
 interface SourcePanelProps {
@@ -20,6 +23,8 @@ export const SourcePanel: React.FC<SourcePanelProps> = ({
   sentenceRecord,
   onClose,
 }) => {
+  const [copiedSnippet, setCopiedSnippet] = useState<string | null>(null);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -29,6 +34,12 @@ export const SourcePanel: React.FC<SourcePanelProps> = ({
   }, [onClose]);
 
   if (!sentenceRecord) return null;
+
+  const handleCopySnippet = (text: string, id: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedSnippet(id);
+    setTimeout(() => setCopiedSnippet(null), 2000);
+  };
 
   const getVerdictBadge = () => {
     switch (sentenceRecord.status) {
@@ -85,7 +96,7 @@ export const SourcePanel: React.FC<SourcePanelProps> = ({
           <div className="flex items-center gap-2">
             <FileText className="w-4 h-4 text-white" />
             <span className="text-xs font-semibold uppercase tracking-wider text-white">
-              SOURCE EVIDENCE
+              SOURCE SPOTLIGHT
             </span>
           </div>
           <button
@@ -157,14 +168,15 @@ export const SourcePanel: React.FC<SourcePanelProps> = ({
           {/* Matched Source Passages */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wider">
+              <label className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wider flex items-center gap-1.5">
+                <Zap className="w-3 h-3 text-emerald-400 fill-current" />
                 {candidates.length > 1
-                  ? `Top ${candidates.length} Retrieved Source Passages`
-                  : "Matched Source Passage"}
+                  ? `Top ${candidates.length} Spotlighted Source Passages`
+                  : "Spotlighted Source Passage"}
               </label>
               {sentenceRecord.similarityScore !== null && (
                 <span className="text-[10px] font-mono text-neutral-400">
-                  Candidate similarity: {(sentenceRecord.similarityScore * 100).toFixed(1)}%
+                  Similarity: {(sentenceRecord.similarityScore * 100).toFixed(1)}%
                 </span>
               )}
             </div>
@@ -174,24 +186,41 @@ export const SourcePanel: React.FC<SourcePanelProps> = ({
                 {candidates.map((cand, idx) => (
                   <div
                     key={cand.chunkId || idx}
-                    className="p-4 rounded-xl border border-white/10 bg-black text-xs text-white space-y-2.5 hover:border-white/20 transition-colors"
+                    className={`p-4 rounded-xl border transition-all ${
+                      idx === 0
+                        ? "border-emerald-500/40 bg-emerald-950/10 shadow-[0_0_20px_rgba(16,185,129,0.08)] text-white"
+                        : "border-white/10 bg-black text-white hover:border-white/20"
+                    }`}
                   >
-                    <div className="flex items-center justify-between text-[11px] text-neutral-400 font-mono border-b border-white/[0.06] pb-2">
+                    <div className="flex items-center justify-between text-[11px] text-neutral-400 font-mono border-b border-white/[0.08] pb-2 mb-2.5">
                       <span className="text-neutral-300">
                         Page {cand.pageNumber} · Offset {cand.charOffsetStart}–{cand.charOffsetEnd}
                       </span>
-                      <span className="text-white font-medium">
-                        Score: {(cand.similarityScore * 100).toFixed(1)}%
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-emerald-400 font-medium">
+                          {(cand.similarityScore * 100).toFixed(1)}%
+                        </span>
+                        <button
+                          onClick={() => handleCopySnippet(cand.text, cand.chunkId || `${idx}`)}
+                          className="p-1 hover:text-white text-neutral-400 rounded transition-colors"
+                          title="Copy snippet text"
+                        >
+                          {copiedSnippet === (cand.chunkId || `${idx}`) ? (
+                            <Check className="w-3.5 h-3.5 text-emerald-400" />
+                          ) : (
+                            <Copy className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                      </div>
                     </div>
-                    <p className="leading-relaxed text-neutral-300 whitespace-pre-wrap">
+                    <p className="leading-relaxed text-neutral-200 whitespace-pre-wrap text-xs sm:text-sm">
                       {cand.text}
                     </p>
                   </div>
                 ))}
               </div>
             ) : sentenceRecord.matchedChunkText ? (
-              <div className="p-4 rounded-xl border border-white/10 bg-black text-xs text-neutral-300 leading-relaxed">
+              <div className="p-4 rounded-xl border border-emerald-500/30 bg-emerald-950/10 text-xs text-neutral-200 leading-relaxed">
                 {sentenceRecord.matchedChunkText}
               </div>
             ) : (

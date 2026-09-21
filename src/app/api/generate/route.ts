@@ -5,7 +5,7 @@ import { getRedisSession, updateRedisSession } from '@/lib/redis';
 
 export async function POST(req: NextRequest) {
   try {
-    const { question, documentText, sessionId } = await req.json();
+    const { question, documentText, sessionId, isStressTestMode } = await req.json();
 
     if (!question || !question.trim()) {
       return NextResponse.json({ error: 'Question cannot be empty.' }, { status: 400 });
@@ -38,7 +38,16 @@ export async function POST(req: NextRequest) {
         try {
           const tokenGenerator = streamAnswerGeneration(question, documentText);
 
-          for await (const token of tokenGenerator) {
+          for await (let token of tokenGenerator) {
+            // Adversarial Stress-Test Injection: If stress test mode is enabled, deliberately inject a subtle hallucination
+            if (isStressTestMode) {
+              if (token.includes('increased')) token = token.replace('increased', 'decreased significantly');
+              else if (token.includes('grew')) token = token.replace('grew', 'declined sharply');
+              else if (token.includes('rose')) token = token.replace('rose', 'fell by 40%');
+              else if (token.includes('10%')) token = token.replace('10%', '85%');
+              else if (token.includes('$45 million')) token = token.replace('$45 million', '$2.1 million');
+            }
+
             const payload = JSON.stringify({ token });
             controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
           }
