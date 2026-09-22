@@ -6,8 +6,8 @@ export interface ChunkingResult {
   indexedText?: string;
 }
 
-const MAX_PAGES = 20;
-const MAX_WORDS = 8000;
+const MAX_PAGES = 200;
+const MAX_WORDS = 100000;
 const CHUNK_SIZE_WORDS = 200;
 const CHUNK_OVERLAP_WORDS = 40;
 
@@ -49,7 +49,7 @@ export function chunkDocument(
   if (totalWords > MAX_WORDS) {
     truncated = true;
     truncatedPageRange = (truncatedPageRange ? truncatedPageRange + '; ' : '') +
-      `Exceeded 8,000 words cap (truncated to first 8,000 words)`;
+      `Exceeded ${MAX_WORDS.toLocaleString()} words cap (truncated to first ${MAX_WORDS.toLocaleString()} words)`;
     
     // Trim pages to first 8,000 words
     let remainingWords = MAX_WORDS;
@@ -215,7 +215,7 @@ export function chunkMultipleDocuments(documents: InputDocument[]): ChunkingResu
         pageCount: 0,
         wordCount: 0,
         truncated: true,
-        truncatedPageRange: 'Excluded: session limit of 20 pages / 8,000 words reached'
+        truncatedPageRange: `Excluded: session limit of ${MAX_PAGES} pages / ${MAX_WORDS.toLocaleString()} words reached`
       });
       continue;
     }
