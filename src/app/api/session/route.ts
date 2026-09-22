@@ -5,6 +5,8 @@ import { indexDocumentInMoss } from '@/lib/moss';
 import { generateTextEmbedding } from '@/lib/gemini';
 import { ChunkRecord } from '@/lib/types';
 
+export const maxDuration = 60; // Allow up to 60 seconds on Vercel for multi-page document ingestion
+
 export async function POST(req: NextRequest) {
   try {
     const contentType = req.headers.get('content-type') || '';
