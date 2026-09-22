@@ -772,21 +772,43 @@ export async function extractPdfTextWithGemini(
 
   return await callGeminiWithFailover(async (client) => {
     const base64Data = buffer.toString('base64');
-    const response = await client.models.generateContent({
-      model: GENERATION_MODEL,
-      contents: [
-        {
-          inlineData: {
-            mimeType: 'application/pdf',
-            data: base64Data,
+    const promptText = 'Transcribe all text from this PDF document page by page. For each page, start with a header like "--- PAGE 1 ---", "--- PAGE 2 ---", etc. Do NOT include summaries or markdown styling beyond the page markers. Return the verbatim text.';
+    
+    let response;
+    try {
+      response = await client.models.generateContent({
+        model: process.env.GOOGLE_PDF_MODEL || 'gemini-2.5-flash',
+        contents: [
+          {
+            inlineData: {
+              mimeType: 'application/pdf',
+              data: base64Data,
+            },
           },
-        },
-        'Transcribe all text from this PDF document page by page. For each page, start with a header like "--- PAGE 1 ---", "--- PAGE 2 ---", etc. Do NOT include summaries or markdown styling beyond the page markers. Return the verbatim text.'
-      ],
-      config: {
-        temperature: 0.0,
-      }
-    });
+          promptText
+        ],
+        config: {
+          temperature: 0.0,
+        }
+      });
+    } catch {
+      // Automatic fallback to gemini-2.0-flash if 2.5 is unavailable
+      response = await client.models.generateContent({
+        model: 'gemini-2.0-flash',
+        contents: [
+          {
+            inlineData: {
+              mimeType: 'application/pdf',
+              data: base64Data,
+            },
+          },
+          promptText
+        ],
+        config: {
+          temperature: 0.0,
+        }
+      });
+    }
 
     const text = response.text || '';
     if (!text.trim()) {
