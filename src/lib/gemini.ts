@@ -1,6 +1,11 @@
 import { GoogleGenAI } from '@google/genai';
 import { CandidatePassage, VerificationStatus } from './types';
 import crypto from 'crypto';
+import dns from 'dns';
+
+if (typeof dns?.setDefaultResultOrder === 'function') {
+  dns.setDefaultResultOrder('ipv4first');
+}
 
 export const HIDEVS_BASE_URL = process.env.HIDEVS_BASE_URL || 'https://llm.hidevs.xyz/v1';
 
