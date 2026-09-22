@@ -47,18 +47,18 @@ export async function POST(req: NextRequest) {
       retrievalLatencyMs = mossResult.timeTakenInMs;
     }
 
-    // Check similarity floor (fallback to AMBER if no relevant candidates)
+    // Check similarity floor (fallback to AMBER immediately without calling LLM if no relevant candidates)
     const bestScore = candidates.length > 0 ? (candidates[0].similarityScore || 0) : 0;
-    if (candidates.length === 0 || (bestScore === 0 && !clientChunks)) {
+    if (candidates.length === 0 || bestScore < 0.20) {
       return NextResponse.json({
         status: 'AMBER',
-        matchedChunkId: null,
-        matchedChunkText: null,
-        topCandidates: [],
-        similarityScore: null,
+        matchedChunkId: candidates[0]?.chunkId || null,
+        matchedChunkText: candidates[0]?.text || null,
+        topCandidates: candidates,
+        similarityScore: bestScore > 0 ? bestScore : null,
         retrievalLatencyMs,
         verdictLatencyMs: 0,
-        reasoning: 'No related source passage found in document.'
+        reasoning: 'No related source passage found in document above similarity floor.'
       });
     }
 

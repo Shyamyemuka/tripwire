@@ -40,6 +40,7 @@ type DockItemProps = {
   baseItemSize: number;
   magnification: number;
   active?: boolean;
+  label?: React.ReactNode;
 };
 
 function DockItem({
@@ -52,9 +53,11 @@ function DockItem({
   magnification,
   baseItemSize,
   active = false,
+  label,
 }: DockItemProps) {
   const ref = useRef<HTMLDivElement>(null);
   const isHovered = useMotionValue(0);
+  const textLabel = typeof label === 'string' ? label : undefined;
 
   const mouseDistance = useTransform(mouseX, val => {
     const rect = ref.current?.getBoundingClientRect() ?? {
@@ -79,6 +82,8 @@ function DockItem({
       onFocus={() => isHovered.set(1)}
       onBlur={() => isHovered.set(0)}
       onClick={onClick}
+      title={textLabel}
+      aria-label={textLabel}
       className={`relative inline-flex items-center justify-center rounded-full bg-white/[0.08] backdrop-blur-xl border border-white/20 shadow-lg cursor-pointer transition-colors hover:bg-white/20 hover:border-white/40 ${
         active ? 'bg-white/25 border-white/50 text-white ring-2 ring-white/30' : 'text-neutral-300 hover:text-white'
       } ${className}`}
@@ -116,11 +121,11 @@ function DockLabel({ children, className = '', isHovered }: DockLabelProps) {
     <AnimatePresence>
       {isVisible && (
         <motion.div
-          initial={{ opacity: 0, y: 0 }}
-          animate={{ opacity: 1, y: -10 }}
-          exit={{ opacity: 0, y: 0 }}
-          transition={{ duration: 0.2 }}
-          className={`${className} absolute -top-9 left-1/2 w-fit whitespace-pre rounded-lg border border-white/20 bg-black/90 backdrop-blur-xl px-2.5 py-1 text-[11px] font-mono font-medium text-white shadow-xl pointer-events-none z-50`}
+          initial={{ opacity: 0, y: 2, scale: 0.95 }}
+          animate={{ opacity: 1, y: 8, scale: 1 }}
+          exit={{ opacity: 0, y: 2, scale: 0.95 }}
+          transition={{ duration: 0.15 }}
+          className={`${className} absolute top-full mt-1.5 left-1/2 w-max whitespace-nowrap rounded-lg border border-white/20 bg-neutral-950/95 backdrop-blur-xl px-2.5 py-1 text-[11px] font-sans font-medium text-white shadow-2xl pointer-events-none z-50`}
           role="tooltip"
           style={{ x: '-50%' }}
         >
@@ -148,18 +153,13 @@ export function MagnificationDock({
   magnification = 60,
   distance = 160,
   panelHeight = 54,
-  dockHeight = 120,
   baseItemSize = 40
 }: DockProps) {
   const mouseX = useMotionValue(Infinity);
   const isHovered = useMotionValue(0);
 
-  const maxHeight = useMemo(() => Math.max(dockHeight, magnification + 12), [dockHeight, magnification]);
-  const heightRow = useTransform(isHovered, [0, 1], [panelHeight, maxHeight]);
-  const height = useSpring(heightRow, spring);
-
   return (
-    <motion.div style={{ height, scrollbarWidth: 'none' }} className="flex max-w-full items-center justify-center">
+    <div style={{ height: panelHeight, scrollbarWidth: 'none' }} className="flex max-w-full items-center justify-center overflow-visible">
       <motion.div
         onMouseMove={({ pageX }) => {
           isHovered.set(1);
@@ -169,7 +169,7 @@ export function MagnificationDock({
           isHovered.set(0);
           mouseX.set(Infinity);
         }}
-        className={`${className} flex items-center w-fit gap-2 sm:gap-2.5 rounded-full border border-white/15 bg-black/60 backdrop-blur-2xl px-3 py-1.5 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)]`}
+        className={`${className} flex items-center w-fit gap-2 sm:gap-2.5 rounded-full border border-white/15 bg-black/60 backdrop-blur-2xl px-3 py-1.5 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] overflow-visible`}
         style={{ height: panelHeight }}
         role="toolbar"
         aria-label="Application dock"
@@ -177,6 +177,7 @@ export function MagnificationDock({
         {items.map((item, index) => (
           <DockItem
             key={index}
+            label={item.label}
             onClick={item.onClick}
             className={item.className}
             mouseX={mouseX}
@@ -191,7 +192,7 @@ export function MagnificationDock({
           </DockItem>
         ))}
       </motion.div>
-    </motion.div>
+    </div>
   );
 }
 

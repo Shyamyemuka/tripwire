@@ -55,4 +55,4 @@ yarn-error.log*
 next-env.d.ts
 
 #agentenv
-/.freebuff
+.freebuff

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useCallback, useEffect, useRef, Suspense } from "react";
+import React, { useState, useCallback, useEffect, useRef, Suspense, useMemo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { UploadScreen } from "@/components/UploadScreen";
 import { TopBar } from "@/components/TopBar";
@@ -91,10 +91,58 @@ function AgentWorkspace() {
   const [selectedSentence, setSelectedSentence] =
     useState<SentenceVerificationRecord | null>(null);
 
-  // Measured cumulative metrics across entire session (Invariant 4: real clock metrics)
-  const [totalClaimsVerified, setTotalClaimsVerified] = useState<number>(0);
-  const [totalRetrievalLatencyMs, setTotalRetrievalLatencyMs] = useState<number>(0);
-  const [lastRetrievalLatencyMs, setLastRetrievalLatencyMs] = useState<number | null>(null);
+  // Mode-isolated cumulative and last latency metrics (FR-12 & Invariant 4)
+  const modeMetrics = useMemo(() => {
+    let mossClaims = 0;
+    let mossTotalLatency = 0;
+    let mossLastLatency: number | null = null;
+
+    let baselineClaims = 0;
+    let baselineTotalLatency = 0;
+    let baselineLastLatency: number | null = null;
+
+    for (const turn of qaTurns) {
+      for (const s of turn.answerSentences) {
+        if (
+          s.status &&
+          s.status !== "PENDING" &&
+          s.status !== "GREY" &&
+          typeof s.retrievalLatencyMs === "number" &&
+          s.retrievalLatencyMs > 0
+        ) {
+          if (turn.mode === "moss") {
+            mossClaims++;
+            mossTotalLatency += s.retrievalLatencyMs;
+            mossLastLatency = s.retrievalLatencyMs;
+          } else if (turn.mode === "baseline") {
+            baselineClaims++;
+            baselineTotalLatency += s.retrievalLatencyMs;
+            baselineLastLatency = s.retrievalLatencyMs;
+          }
+        }
+      }
+    }
+
+    return {
+      moss: {
+        claims: mossClaims,
+        totalLatency: mossTotalLatency,
+        avgLatency: mossClaims > 0 ? mossTotalLatency / mossClaims : 0,
+        lastLatency: mossLastLatency,
+      },
+      baseline: {
+        claims: baselineClaims,
+        totalLatency: baselineTotalLatency,
+        avgLatency: baselineClaims > 0 ? baselineTotalLatency / baselineClaims : 0,
+        lastLatency: baselineLastLatency,
+      },
+    };
+  }, [qaTurns]);
+
+  const activeModeMetrics = mode === "moss" ? modeMetrics.moss : modeMetrics.baseline;
+  const totalClaimsVerified = modeMetrics.moss.claims + modeMetrics.baseline.claims;
+  const totalRetrievalLatencyMs = modeMetrics.moss.totalLatency + modeMetrics.baseline.totalLatency;
+  const avgRetrievalLatencyMs = totalClaimsVerified > 0 ? totalRetrievalLatencyMs / totalClaimsVerified : 0;
 
   // Track active session data with a ref for reliable autosave during async streaming
   const sessionRef = useRef<{
@@ -129,7 +177,7 @@ function AgentWorkspace() {
       mode,
       totalClaimsVerified,
       totalRetrievalLatencyMs,
-      lastRetrievalLatencyMs,
+      lastRetrievalLatencyMs: activeModeMetrics.lastLatency,
     };
   }, [
     sessionId,
@@ -140,7 +188,7 @@ function AgentWorkspace() {
     mode,
     totalClaimsVerified,
     totalRetrievalLatencyMs,
-    lastRetrievalLatencyMs,
+    activeModeMetrics.lastLatency,
   ]);
 
   // Persist current session snapshot to IndexedDB
@@ -178,9 +226,6 @@ function AgentWorkspace() {
           setDocumentFullText(conv.documentFullText);
           setQaTurns(conv.qaTurns || []);
           setMode(conv.mode || "moss");
-          setTotalClaimsVerified(conv.totalClaimsVerified || 0);
-          setTotalRetrievalLatencyMs(conv.totalRetrievalLatencyMs || 0);
-          setLastRetrievalLatencyMs(conv.lastRetrievalLatencyMs ?? null);
         }
       });
     }
@@ -197,9 +242,6 @@ function AgentWorkspace() {
     setChunks(data.chunks);
     setDocumentFullText(data.documentFullText);
     setQaTurns([]);
-    setTotalClaimsVerified(0);
-    setTotalRetrievalLatencyMs(0);
-    setLastRetrievalLatencyMs(null);
 
     // Update URL query parameter
     window.history.pushState(null, "", `/agent?c=${encodeURIComponent(data.sessionId)}`);
@@ -231,9 +273,6 @@ function AgentWorkspace() {
       setDocumentFullText(conv.documentFullText);
       setQaTurns(conv.qaTurns || []);
       setMode(conv.mode || "moss");
-      setTotalClaimsVerified(conv.totalClaimsVerified || 0);
-      setTotalRetrievalLatencyMs(conv.totalRetrievalLatencyMs || 0);
-      setLastRetrievalLatencyMs(conv.lastRetrievalLatencyMs ?? null);
       setSelectedSentence(null);
 
       window.history.pushState(null, "", `/agent?c=${encodeURIComponent(conv.id)}`);
@@ -328,13 +367,6 @@ function AgentWorkspace() {
               };
             })
           );
-
-          // Update cumulative metrics (FR-9)
-          if (data.status !== "GREY") {
-            setTotalClaimsVerified((c) => c + 1);
-            setTotalRetrievalLatencyMs((tot) => tot + data.retrievalLatencyMs);
-            setLastRetrievalLatencyMs(data.retrievalLatencyMs);
-          }
 
           // Feature 4: Trigger Audio Alert & Voice Intervention on RED contradiction
           if (data.status === "RED") {
@@ -591,10 +623,7 @@ function AgentWorkspace() {
     if (sessionId && documentMeta) {
       persistSession();
     }
-  }, [sessionId, documentMeta, qaTurns, totalClaimsVerified, totalRetrievalLatencyMs, lastRetrievalLatencyMs, persistSession]);
-
-  const avgRetrievalLatencyMs =
-    totalClaimsVerified > 0 ? totalRetrievalLatencyMs / totalClaimsVerified : 0;
+  }, [sessionId, documentMeta, qaTurns, mode, persistSession]);
 
   const handleExportAuditReport = useCallback(() => {
     if (!documentMeta || qaTurns.length === 0) return;
@@ -614,7 +643,10 @@ function AgentWorkspace() {
     }
 
     reportLines.push(`Total Verified Claims: ${totalClaimsVerified}`);
-    reportLines.push(`Average Moss Retrieval Latency: ${avgRetrievalLatencyMs.toFixed(2)}ms`);
+    reportLines.push(`Average Moss Retrieval Latency: ${modeMetrics.moss.avgLatency.toFixed(2)}ms (${modeMetrics.moss.claims} claims)`);
+    if (modeMetrics.baseline.claims > 0) {
+      reportLines.push(`Average Baseline Retrieval Latency: ${modeMetrics.baseline.avgLatency.toFixed(2)}ms (${modeMetrics.baseline.claims} claims)`);
+    }
     reportLines.push(`--------------------------------------------------\n`);
 
     qaTurns.forEach((turn, tIdx) => {
@@ -646,7 +678,7 @@ function AgentWorkspace() {
     a.download = `tripwire-audit-${documentMeta.filename.replace(/[^a-zA-Z0-9]/g, '_')}.txt`;
     a.click();
     URL.revokeObjectURL(url);
-  }, [documentMeta, qaTurns, totalClaimsVerified, avgRetrievalLatencyMs]);
+  }, [documentMeta, qaTurns, totalClaimsVerified, modeMetrics]);
 
   return (
     <div className="min-h-screen flex flex-col bg-[#000000] bg-[url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAIElEQVR42mIUEhJiwAbevXuHVZyJgUQwqmEUDB0AEGAADd8DEPTX6ksAAAAASUVORUS5CYII=')] bg-[size:10px] text-white font-sans selection:bg-white/20 selection:text-white relative">
@@ -674,9 +706,9 @@ function AgentWorkspace() {
             documentMeta={documentMeta}
             mode={mode}
             onToggleMode={handleToggleMode}
-            lastRetrievalLatencyMs={lastRetrievalLatencyMs}
-            totalClaimsVerified={totalClaimsVerified}
-            avgRetrievalLatencyMs={avgRetrievalLatencyMs}
+            lastRetrievalLatencyMs={activeModeMetrics.lastLatency}
+            totalClaimsVerified={activeModeMetrics.claims}
+            avgRetrievalLatencyMs={activeModeMetrics.avgLatency}
             onResetDocument={handleResetDocument}
             onBackToLanding={() => router.push("/")}
             onOpenHistory={() => setIsHistoryOpen(true)}

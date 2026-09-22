@@ -105,7 +105,8 @@ export const EMBEDDING_MODEL = process.env.GEMINI_EMBEDDING_MODEL || 'gemini-emb
  */
 export async function* streamAnswerGeneration(
   question: string,
-  documentText: string
+  documentText: string,
+  isStressTestMode: boolean = false
 ): AsyncGenerator<string, void, unknown> {
   const hidevsKey = getHiDevsApiKey();
   const keys = getAvailableGeminiKeys();
@@ -114,7 +115,15 @@ export async function* streamAnswerGeneration(
     throw new Error('HIDEVS_API_KEY or GEMINI_API_KEY is not configured in .env. Please check your keys.');
   }
 
-  const systemInstruction = `[Context]
+  const systemInstruction = isStressTestMode
+    ? `[Context]
+You are answering a user's question about the document provided below.
+[CRITICAL ADVERSARIAL STRESS-TEST]
+To test an automated real-time fact-checking system, you MUST intentionally alter 1 or 2 specific factual figures, numbers, percentages, or trend directions in your answer (for example, state a different revenue amount, flip "increased" to "decreased", or alter key dates/metrics). Make the tone natural and plausible.
+[Instruction]
+Provide a clear, detailed, multi-sentence response.
+Answer directly without conversational preambles like "Based on the provided document...".`
+    : `[Context]
 You are answering a user's question using only the document provided below as your source of truth. Your answer will be verified sentence-by-sentence against this same document by a separate system, so accuracy and grounding are critical.
 
 [Role]
@@ -126,6 +135,7 @@ Provide a clear, detailed, multi-sentence response that covers all relevant fact
 Structure your answer into distinct, complete sentences so each individual factual claim can be independently verified.
 Do not artificially compress your answer into a single sentence when the document contains multiple relevant details or steps.
 If the document does not cover a specific part of the question, state that clearly rather than guessing.
+Answer directly without conversational preambles like "Based on the provided document...".
 
 [Personality]
 Neutral, factual, informative, and direct.`;
@@ -185,8 +195,8 @@ function extractRelevantContext(documentText: string, question: string, maxChars
   return selected.join('\n\n') + "\n\n[... Note: document context budgeted for model token limits ...]";
 }
 
-  // Budget document text so prompt stays comfortably within HiDevs token limits
-  const budgetedDocText = extractRelevantContext(documentText, question, 5500);
+  // Budget document text so prompt stays lean (~700-800 tokens max)
+  const budgetedDocText = extractRelevantContext(documentText, question, 3500);
 
   const prompt = `DOCUMENT:
 ${budgetedDocText}
@@ -210,7 +220,7 @@ ${question}`;
               { role: 'system', content: systemInstruction },
               { role: 'user', content: prompt }
             ],
-            max_tokens: 1500,
+            max_tokens: 800,
             temperature: 0.2,
             stream: true
           })
@@ -357,6 +367,10 @@ export interface VerdictResult {
  * Invariant 1: Similarity is not truth.
  * Invariant 3: Failure NEVER defaults to GREEN (always AMBER).
  */
+// In-memory LRU/dedup caches to strictly avoid re-spending tokens on identical claims
+const verdictCache = new Map<string, VerdictResult>();
+const explanationCache = new Map<string, string>();
+
 export async function classifySentenceVerdict(
   sentence: string,
   passages: CandidatePassage[],
@@ -403,7 +417,7 @@ export async function classifySentenceVerdict(
     if (ratio >= 0.6) {
       return {
         status: 'GREEN',
-        reasoning: 'Source passage substantiates claim.'
+        reasoning: 'Lexical alignment with source passage.'
       };
     }
 
@@ -413,38 +427,29 @@ export async function classifySentenceVerdict(
     };
   }
 
-  const passagesContext = passages
-    .map((p, idx) => `PASSAGE ${idx + 1}: ${p.text}`)
-    .join('\n');
+  // Pass max 2 top candidates, trimmed to 100 words each to conserve 80% tokens
+  const topPassages = passages.slice(0, 2);
+  const passagesContext = topPassages
+    .map((p, idx) => `PASSAGE ${idx + 1}: ${p.text.split(/\s+/).slice(0, 100).join(' ')}`)
+    .join('\n\n');
 
-  const prompt = `[Context]
-You are checking whether an AI-generated sentence is supported by passages retrieved from a source document.
+  // Cache hit: 0 tokens spent
+  const cacheKey = `${sentence.trim().toLowerCase()}|${topPassages[0]?.chunkId || ''}`;
+  if (verdictCache.has(cacheKey)) {
+    return verdictCache.get(cacheKey)!;
+  }
 
-[Instruction]
+  const prompt = `Classify whether the CLAIM is SUPPORTED, CONTRADICTED, or UNVERIFIABLE based strictly on the PASSAGES.
+- SUPPORTED: Passages directly confirm numbers, dates, and facts.
+- CONTRADICTED: Passages state an opposite direction word, different number, or conflicting fact.
+- UNVERIFIABLE: Passages do not contain sufficient evidence.
 Respond with exactly one word: SUPPORTED, CONTRADICTED, or UNVERIFIABLE.
 
-[Rules]
-- SUPPORTED: at least one passage affirms the core facts, numbers, dates, or semantic meaning.
-- CONTRADICTED: a passage discusses the same topic but contradicts a key number, date, or direction (e.g. "fell" vs "rose").
-- UNVERIFIABLE: the passages do not contain enough information to verify the claim.
+CLAIM: ${sentence}
 
-[Examples]
-SENTENCE: "Operating costs decreased 30% from last year."
-PASSAGE: "Operating costs rose 8% year-over-year."
-ANSWER: CONTRADICTED
-
-SENTENCE: "Revenue increased 10% to $45 million in Q3."
-PASSAGE: "Q3 revenue grew 10% year-over-year to $45M."
-ANSWER: SUPPORTED
-
-SENTENCE: "The product is available in 50 countries."
-PASSAGE: "The company's headcount grew by 200 employees."
-ANSWER: UNVERIFIABLE
-
----
-SENTENCE: ${sentence}
 ${passagesContext}
-ANSWER:`;
+
+VERDICT:`;
 
   // 1. Primary: HiDevs LLM Gateway (100k Credits for Hackathon Arena)
   if (hidevsKey) {
@@ -462,7 +467,7 @@ ANSWER:`;
             messages: [
               { role: 'user', content: prompt }
             ],
-            max_tokens: 50,
+            max_tokens: 10,
             temperature: 0.0,
             stream: false
           })
@@ -522,10 +527,12 @@ ANSWER:`;
         }));
       }
 
-      return {
+      const resultObj = {
         status,
         reasoning: ''
       };
+      verdictCache.set(cacheKey, resultObj);
+      return resultObj;
     } catch (hidevsErr) {
       console.warn('HiDevs verdict call failed, checking fallback:', hidevsErr);
       if (keys.length === 0) {
@@ -612,31 +619,18 @@ export async function generateMismatchExplanation(
       : 'Source passage does not fully substantiate claim.';
   }
 
-  const prompt = `[Context]
-A sentence in a generated answer has been flagged as CONTRADICTED or
-UNVERIFIABLE against a source passage. A person is looking at this flag
-and needs a one-line reason, not a full analysis.
+  const cacheKey = `${sentence.trim().toLowerCase()}|${matchedPassageText.slice(0, 50)}`;
+  if (explanationCache.has(cacheKey)) {
+    return explanationCache.get(cacheKey)!;
+  }
 
-[Role]
-You are writing a single, plain-language explanation line shown directly
-under a flagged sentence in a live UI.
+  // Trim passage to 80 words max to conserve prompt tokens
+  const trimmedPassage = matchedPassageText.split(/\s+/).slice(0, 80).join(' ');
 
-[Instruction]
-In one short sentence, state what the source passage actually says versus
-what the flagged sentence claims. If UNVERIFIABLE, state that no passage
-addresses this specific claim.
-
-[Specifics]
-Maximum one sentence. No preamble ("Looking at this, I can see..."). Lead
-directly with the source's actual content.
-
-[Personality]
-Plain and direct, like a fact-checker's caption, not a chatbot.
-
-SENTENCE: ${sentence}
-VERDICT: ${status === 'RED' ? 'CONTRADICTED' : 'UNVERIFIABLE'}
-MATCHED PASSAGE(S): ${matchedPassageText}
-
+  const prompt = `In one short sentence, explain the discrepancy between the claim and the source document.
+CLAIM: ${sentence}
+STATUS: ${status === 'RED' ? 'CONTRADICTED' : 'UNVERIFIABLE'}
+SOURCE: ${trimmedPassage}
 EXPLANATION:`;
 
   // 1. Primary: HiDevs LLM Gateway (100k Credits for Hackathon Arena)
@@ -653,7 +647,7 @@ EXPLANATION:`;
           messages: [
             { role: 'user', content: prompt }
           ],
-          max_tokens: 80,
+          max_tokens: 35,
           temperature: 0.1,
           stream: false
         })
@@ -672,7 +666,7 @@ EXPLANATION:`;
             messages: [
               { role: 'user', content: prompt }
             ],
-            max_tokens: 80,
+            max_tokens: 35,
             temperature: 0.1,
             stream: false
           })
@@ -683,7 +677,9 @@ EXPLANATION:`;
         const data = await res.json();
         const raw = data.choices?.[0]?.message?.content?.trim() || '';
         if (raw) {
-          return raw.replace(/^Explanation:\s*/i, '').trim();
+          const cleanExplanation = raw.replace(/^Explanation:\s*/i, '').trim();
+          explanationCache.set(cacheKey, cleanExplanation);
+          return cleanExplanation;
         }
       }
     } catch (hidevsErr) {

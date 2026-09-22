@@ -7,7 +7,7 @@ import {
   AlertTriangle,
   Zap,
   Database,
-  RotateCcw,
+  Plus,
   Clock,
   Download,
   BarChart3,
@@ -75,8 +75,8 @@ export const TopBar: React.FC<TopBarProps> = ({
       },
     },
     {
-      icon: <RotateCcw className="w-4.5 h-4.5" />,
-      label: "Change Document",
+      icon: <Plus className="w-4.5 h-4.5" />,
+      label: "New Chat",
       onClick: onResetDocument,
     },
     ...(onOpenHistory
@@ -227,13 +227,13 @@ export const TopBar: React.FC<TopBarProps> = ({
         </div>
 
         {/* Center: Premium MagnificationDock */}
-        <div className="flex items-center justify-center my-1 md:my-0">
+        <div className="flex items-center justify-center my-0 md:my-0">
           <MagnificationDock
             items={dockItems}
-            panelHeight={48}
-            baseItemSize={36}
-            magnification={54}
-            distance={140}
+            panelHeight={40}
+            baseItemSize={32}
+            magnification={44}
+            distance={110}
           />
         </div>
 
