@@ -450,34 +450,15 @@ ANSWER:`;
   if (hidevsKey) {
     try {
       const t0 = performance.now();
-      let res = await fetch(`${HIDEVS_BASE_URL}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${hidevsKey}`
-        },
-        body: JSON.stringify({
-          model: VERDICT_MODEL,
-          messages: [
-            { role: 'user', content: prompt }
-          ],
-          max_tokens: 50,
-          temperature: 0.0,
-          stream: false
-        })
-      });
-
-      // If 429 sliding window throttle occurs, back off 700ms and retry
-      if (!res.ok && res.status === 429) {
-        await new Promise(r => setTimeout(r, 700));
-        res = await fetch(`${HIDEVS_BASE_URL}/chat/completions`, {
+      const makeVerdictRequest = async () => {
+        return fetch(`${HIDEVS_BASE_URL}/chat/completions`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${hidevsKey}`
           },
           body: JSON.stringify({
-            model: 'gemini-3.5-flash-lite',
+            model: VERDICT_MODEL,
             messages: [
               { role: 'user', content: prompt }
             ],
@@ -486,6 +467,30 @@ ANSWER:`;
             stream: false
           })
         });
+      };
+
+      let res: Response | null = null;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          res = await makeVerdictRequest();
+          break;
+        } catch (netErr) {
+          if (attempt === 0) {
+            await new Promise(r => setTimeout(r, 400));
+            continue;
+          }
+          throw netErr;
+        }
+      }
+
+      if (!res) {
+        throw new Error("Failed to receive response from HiDevs gateway");
+      }
+
+      // If 429 sliding window throttle occurs, back off 700ms and retry
+      if (!res.ok && res.status === 429) {
+        await new Promise(r => setTimeout(r, 700));
+        res = await makeVerdictRequest();
       }
 
       if (!res.ok) {

@@ -5,7 +5,6 @@ import Image from "next/image";
 import {
   UploadCloud,
   FileText,
-  Files,
   AlertCircle,
   Sparkles,
   ArrowRight,
@@ -37,9 +36,8 @@ export const UploadScreen: React.FC<UploadScreenProps> = ({
   onBackToLanding,
   onOpenHistory,
 }) => {
-  const [tabMode, setTabMode] = useState<"single" | "multi" | "paste">("single");
+  const [tabMode, setTabMode] = useState<"upload" | "paste">("upload");
   const [stagedFiles, setStagedFiles] = useState<File[]>([]);
-  const [stagedNotes, setStagedNotes] = useState<Array<{ id: string; title: string; text: string }>>([]);
   const [pastedText, setPastedText] = useState("");
   const [pastedTitle, setPastedTitle] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -47,7 +45,7 @@ export const UploadScreen: React.FC<UploadScreenProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const multiFileInputRef = useRef<HTMLInputElement>(null);
+  const addMoreInputRef = useRef<HTMLInputElement>(null);
 
   const simulateStepProgress = async (fn: () => Promise<void>) => {
     setIsLoading(true);
@@ -67,35 +65,7 @@ export const UploadScreen: React.FC<UploadScreenProps> = ({
 
   const MAX_TOTAL_STAGED = 5;
 
-  // Single-file immediate processing (smooth, 1-click UX)
-  const handleProcessSingleFile = async (file: File) => {
-    const lower = file.name.toLowerCase();
-    if (!lower.endsWith(".pdf") && !lower.endsWith(".txt") && !lower.endsWith(".md")) {
-      setErrorMessage(`"${file.name}" has an unsupported format. Please upload PDF, TXT, or MD files.`);
-      return;
-    }
-
-    setErrorMessage(null);
-    await simulateStepProgress(async () => {
-      const formData = new FormData();
-      formData.append("file", file);
-      const res = await fetch("/api/session", {
-        method: "POST",
-        body: formData,
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to process document.");
-      }
-      onDocumentLoaded(data);
-    }).catch((err: unknown) => {
-      const msg = err instanceof Error ? err.message : "Error processing document.";
-      setErrorMessage(msg);
-      setIndexingStep("idle");
-    });
-  };
-
-  // Add files to multi-doc staging
+  // Add files to staging (supports 1 or multiple files in the same flow)
   const handleAddFiles = (files: FileList | File[]) => {
     setErrorMessage(null);
     const newFiles: File[] = [];
@@ -109,12 +79,11 @@ export const UploadScreen: React.FC<UploadScreenProps> = ({
       newFiles.push(file);
     }
 
-    // Enforce combined staged item limit (Copilot Finding 4)
-    const currentTotal = stagedFiles.length + stagedNotes.length;
+    const currentTotal = stagedFiles.length;
     const maxCanAdd = Math.max(0, MAX_TOTAL_STAGED - currentTotal);
 
     if (newFiles.length > maxCanAdd) {
-      setErrorMessage(`Maximum limit of ${MAX_TOTAL_STAGED} combined files and notes per session.`);
+      setErrorMessage(`Maximum limit of ${MAX_TOTAL_STAGED} files per verification session.`);
     }
 
     const filesToAdd = newFiles.slice(0, maxCanAdd);
@@ -123,52 +92,26 @@ export const UploadScreen: React.FC<UploadScreenProps> = ({
     }
   };
 
-  const handleAddStagedNote = () => {
-    if (!pastedText.trim()) return;
-    if (stagedFiles.length + stagedNotes.length >= MAX_TOTAL_STAGED) {
-      setErrorMessage(`Maximum limit of ${MAX_TOTAL_STAGED} documents reached.`);
-      return;
-    }
-
-    const title = pastedTitle.trim() || `Pasted Note ${stagedNotes.length + 1}`;
-    setStagedNotes((prev) => [
-      ...prev,
-      { id: `note-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, title, text: pastedText },
-    ]);
-    setPastedText("");
-    setPastedTitle("");
-    setErrorMessage(null);
-    setTabMode("multi");
-  };
-
   const handleRemoveStagedFile = (index: number) => {
     setStagedFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const handleRemoveStagedNote = (id: string) => {
-    setStagedNotes((prev) => prev.filter((n) => n.id !== id));
-  };
-
-  // Process all staged documents in multi-file mode
-  const handleStartVerificationSession = async () => {
-    if (stagedFiles.length === 0 && stagedNotes.length === 0) {
-      if (pastedText.trim()) {
-        handleAddStagedNote();
-      } else {
-        setErrorMessage("Please stage at least one file or text note to begin.");
-        return;
-      }
+  // Start verification for staged documents (single or multiple)
+  const handleStartVerification = async () => {
+    if (stagedFiles.length === 0) {
+      setErrorMessage("Please select or drop at least one document to start verification.");
+      return;
     }
 
     setErrorMessage(null);
 
     await simulateStepProgress(async () => {
       const formData = new FormData();
-      stagedFiles.forEach((file) => formData.append("files", file));
-      stagedNotes.forEach((note) => {
-        formData.append("pastedTexts", note.text);
-        formData.append("pastedTitles", note.title);
-      });
+      if (stagedFiles.length === 1) {
+        formData.append("file", stagedFiles[0]);
+      } else {
+        stagedFiles.forEach((file) => formData.append("files", file));
+      }
 
       const res = await fetch("/api/session", {
         method: "POST",
@@ -177,20 +120,21 @@ export const UploadScreen: React.FC<UploadScreenProps> = ({
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || "Failed to process documents.");
+        throw new Error(data.error || "Failed to process document(s).");
       }
 
       onDocumentLoaded(data);
     }).catch((err: unknown) => {
-      const msg = err instanceof Error ? err.message : "Error processing documents.";
+      const msg = err instanceof Error ? err.message : "Error processing document(s).";
       setErrorMessage(msg);
       setIndexingStep("idle");
     });
   };
 
-  const handleProcessPastedTextSingle = async (text: string, title = "pasted-document.txt") => {
+  // Start verification for pasted text
+  const handleProcessPastedText = async (text: string, title = "pasted-document.txt") => {
     if (!text.trim()) {
-      setErrorMessage("Please paste or provide document text before proceeding.");
+      setErrorMessage("Please paste or provide document text before starting verification.");
       return;
     }
 
@@ -216,32 +160,13 @@ export const UploadScreen: React.FC<UploadScreenProps> = ({
     });
   };
 
-  // Drop handler for single file tab
-  const handleSingleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(false);
-    const files = e.dataTransfer.files;
-    if (!files || files.length === 0) return;
-
-    if (files.length === 1) {
-      handleProcessSingleFile(files[0]);
-    } else {
-      // User dropped multiple files into single dropzone -> switch to multi
-      handleAddFiles(files);
-      setTabMode("multi");
-    }
-  };
-
-  // Drop handler for multi file tab
-  const handleMultiDrop = (e: React.DragEvent) => {
+  const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       handleAddFiles(e.dataTransfer.files);
     }
   };
-
-  const totalStagedCount = stagedFiles.length + stagedNotes.length;
 
   return (
     <div className="relative z-10 min-h-screen w-full flex flex-col justify-between p-4 sm:p-8 md:p-12 bg-transparent text-white selection:bg-white/20 selection:text-white">
@@ -277,7 +202,7 @@ export const UploadScreen: React.FC<UploadScreenProps> = ({
           {onOpenHistory && (
             <button
               onClick={onOpenHistory}
-              className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-[11px] font-mono text-neutral-300 hover:text-white transition-all"
+              className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-[11px] font-mono text-neutral-300 hover:text-white transition-all cursor-pointer"
             >
               <Clock className="w-3.5 h-3.5 text-neutral-400" />
               <span>History</span>
@@ -303,7 +228,7 @@ export const UploadScreen: React.FC<UploadScreenProps> = ({
               Give Tripwire something to verify.
             </h1>
             <p className="mt-2 text-xs sm:text-sm text-neutral-400 leading-relaxed max-w-md mx-auto">
-              Upload documents or paste text, then ask a question. Tripwire verifies the answer sentence by sentence as it streams.
+              Upload documents or paste text, then start verification. Tripwire checks answers sentence by sentence against your source material.
             </p>
           </div>
 
@@ -311,34 +236,20 @@ export const UploadScreen: React.FC<UploadScreenProps> = ({
           <div className="flex w-full bg-black/60 p-1 rounded-2xl mb-5 border border-white/15 backdrop-blur-xl">
             <button
               onClick={() => {
-                setTabMode("single");
+                setTabMode("upload");
                 setErrorMessage(null);
               }}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium rounded-xl transition-all ${
-                tabMode === "single"
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-xs font-medium rounded-xl transition-all cursor-pointer ${
+                tabMode === "upload"
                   ? "bg-white/15 text-white shadow-md border border-white/20 backdrop-blur-md"
                   : "text-neutral-400 hover:text-white"
               }`}
             >
               <UploadCloud className="w-3.5 h-3.5 text-white/80" />
-              <span>Single Doc</span>
-            </button>
-            <button
-              onClick={() => {
-                setTabMode("multi");
-                setErrorMessage(null);
-              }}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium rounded-xl transition-all ${
-                tabMode === "multi"
-                  ? "bg-white/15 text-white shadow-md border border-white/20 backdrop-blur-md"
-                  : "text-neutral-400 hover:text-white"
-              }`}
-            >
-              <Files className="w-3.5 h-3.5 text-white/80" />
-              <span>Multi-Doc</span>
-              {totalStagedCount > 0 && (
+              <span>Upload Document(s)</span>
+              {stagedFiles.length > 0 && (
                 <span className="ml-1 px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-mono font-semibold">
-                  {totalStagedCount}
+                  {stagedFiles.length}
                 </span>
               )}
             </button>
@@ -347,14 +258,14 @@ export const UploadScreen: React.FC<UploadScreenProps> = ({
                 setTabMode("paste");
                 setErrorMessage(null);
               }}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium rounded-xl transition-all ${
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-xs font-medium rounded-xl transition-all cursor-pointer ${
                 tabMode === "paste"
                   ? "bg-white/15 text-white shadow-md border border-white/20 backdrop-blur-md"
                   : "text-neutral-400 hover:text-white"
               }`}
             >
               <FileEdit className="w-3.5 h-3.5 text-white/80" />
-              <span>Paste Text</span>
+              <span>Paste text instead</span>
             </button>
           </div>
 
@@ -372,7 +283,7 @@ export const UploadScreen: React.FC<UploadScreenProps> = ({
               <div className="flex items-center justify-between text-xs font-mono text-white">
                 <span className="flex items-center gap-2">
                   <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
-                  <span>Processing document...</span>
+                  <span>Processing document(s)...</span>
                 </span>
                 <span className="text-[10px] text-neutral-400">Moss Engine</span>
               </div>
@@ -408,121 +319,88 @@ export const UploadScreen: React.FC<UploadScreenProps> = ({
             </div>
           )}
 
-          {/* TAB 1: Single Document Upload (Clean, 1-Click Dropzone) */}
-          {tabMode === "single" && !isLoading && (
-            <div
-              onDragOver={(e) => {
-                e.preventDefault();
-                setIsDragOver(true);
-              }}
-              onDragLeave={() => setIsDragOver(false)}
-              onDrop={handleSingleDrop}
-              onClick={() => fileInputRef.current?.click()}
-              className={`w-full border rounded-2xl p-8 text-center cursor-pointer transition-all flex flex-col items-center justify-center min-h-[200px] group ${
-                isDragOver
-                  ? "border-white/60 bg-white/[0.08] backdrop-blur-xl scale-[0.99]"
-                  : "border-dashed border-white/20 hover:border-white/40 hover:bg-white/[0.04] bg-black/30 backdrop-blur-md"
-              }`}
-            >
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".pdf,.txt,.md"
-                multiple
-                className="hidden"
-                onChange={(e) => {
-                  if (e.target.files && e.target.files.length > 0) {
-                    if (e.target.files.length === 1) {
-                      handleProcessSingleFile(e.target.files[0]);
-                    } else {
-                      handleAddFiles(e.target.files);
-                      setTabMode("multi");
-                    }
-                  }
-                }}
-              />
-              <div className="w-12 h-12 rounded-2xl glass-card border border-white/20 flex items-center justify-center text-neutral-400 group-hover:text-white group-hover:border-white/40 transition-all mb-3 shadow-md group-hover:scale-105">
-                <UploadCloud className="w-5 h-5 text-white/90" />
-              </div>
-              <p className="text-sm font-medium text-white">
-                Drop a PDF or document here
-              </p>
-              <p className="text-xs text-neutral-400 mt-1">
-                or click to browse from your device
-              </p>
-              <div className="flex items-center gap-1.5 mt-3 text-[10px] text-neutral-400 font-mono">
-                <span className="px-2 py-0.5 rounded-md bg-white/[0.06] border border-white/10">PDF</span>
-                <span className="px-2 py-0.5 rounded-md bg-white/[0.06] border border-white/10">TXT</span>
-                <span className="px-2 py-0.5 rounded-md bg-white/[0.06] border border-white/10">MD</span>
-                <span className="text-neutral-500">· up to 20 pages</span>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 2: Multi-Document Upload (Clean Unified Staged Workspace) */}
-          {tabMode === "multi" && !isLoading && (
-            <div className="w-full space-y-3">
-              {totalStagedCount === 0 ? (
-                /* Empty Multi-Doc Dropzone */
-                <div
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    setIsDragOver(true);
-                  }}
-                  onDragLeave={() => setIsDragOver(false)}
-                  onDrop={handleMultiDrop}
-                  onClick={() => multiFileInputRef.current?.click()}
-                  className={`w-full border rounded-2xl p-8 text-center cursor-pointer transition-all flex flex-col items-center justify-center min-h-[200px] group ${
-                    isDragOver
-                      ? "border-emerald-400/60 bg-emerald-500/[0.08] backdrop-blur-xl scale-[0.99]"
-                      : "border-dashed border-white/20 hover:border-white/40 hover:bg-white/[0.04] bg-black/30 backdrop-blur-md"
-                  }`}
-                >
-                  <input
-                    ref={multiFileInputRef}
-                    type="file"
-                    multiple
-                    accept=".pdf,.txt,.md"
-                    className="hidden"
-                    onChange={(e) => {
-                      if (e.target.files && e.target.files.length > 0) {
-                        handleAddFiles(e.target.files);
-                      }
+          {/* TAB 1: Unified Document Upload (Single & Multiple in the SAME section) */}
+          {tabMode === "upload" && !isLoading && (
+            <div className="w-full space-y-4">
+              {stagedFiles.length === 0 ? (
+                /* Empty Dropzone State */
+                <>
+                  <div
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setIsDragOver(true);
                     }}
-                  />
-                  <div className="w-12 h-12 rounded-2xl glass-card border border-white/20 flex items-center justify-center text-neutral-400 group-hover:text-white group-hover:border-white/40 transition-all mb-3 shadow-md group-hover:scale-105">
-                    <Files className="w-5 h-5 text-emerald-400" />
+                    onDragLeave={() => setIsDragOver(false)}
+                    onDrop={handleDrop}
+                    onClick={() => fileInputRef.current?.click()}
+                    className={`w-full border rounded-2xl p-8 text-center cursor-pointer transition-all flex flex-col items-center justify-center min-h-[200px] group ${
+                      isDragOver
+                        ? "border-white/60 bg-white/[0.08] backdrop-blur-xl scale-[0.99]"
+                        : "border-dashed border-white/20 hover:border-white/40 hover:bg-white/[0.04] bg-black/30 backdrop-blur-md"
+                    }`}
+                  >
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      multiple
+                      accept=".pdf,.txt,.md"
+                      className="hidden"
+                      onChange={(e) => {
+                        if (e.target.files && e.target.files.length > 0) {
+                          handleAddFiles(e.target.files);
+                        }
+                      }}
+                    />
+                    <div className="w-12 h-12 rounded-2xl glass-card border border-white/20 flex items-center justify-center text-neutral-400 group-hover:text-white group-hover:border-white/40 transition-all mb-3 shadow-md group-hover:scale-105">
+                      <UploadCloud className="w-5 h-5 text-white/90" />
+                    </div>
+                    <p className="text-sm font-medium text-white">
+                      Drop document(s) here or browse
+                    </p>
+                    <p className="text-xs text-neutral-400 mt-1">
+                      Upload one or multiple files (PDF, TXT, MD up to {MAX_TOTAL_STAGED})
+                    </p>
+                    <div className="flex items-center gap-1.5 mt-3 text-[10px] text-neutral-400 font-mono">
+                      <span className="px-2 py-0.5 rounded-md bg-white/[0.06] border border-white/10">PDF</span>
+                      <span className="px-2 py-0.5 rounded-md bg-white/[0.06] border border-white/10">TXT</span>
+                      <span className="px-2 py-0.5 rounded-md bg-white/[0.06] border border-white/10">MD</span>
+                      <span className="text-neutral-500">· up to 20 pages combined</span>
+                    </div>
                   </div>
-                  <p className="text-sm font-medium text-white">
-                    Drop multiple documents here
-                  </p>
-                  <p className="text-xs text-neutral-400 mt-1">
-                    or select multiple files (up to {MAX_TOTAL_STAGED} files)
-                  </p>
-                  <span className="text-[10px] text-neutral-500 mt-2 font-mono">
-                    Combined cross-document retrieval · ~8,000 words max
-                  </span>
-                </div>
+
+                  {/* Start Verification Button (Disabled prompt when no files selected) */}
+                  <button
+                    disabled
+                    className="w-full py-3.5 px-4 rounded-xl bg-white/10 border border-white/15 text-neutral-400 text-xs font-semibold cursor-not-allowed flex items-center justify-center gap-2 transition-all"
+                  >
+                    <span>Select or drop documents above to start verification</span>
+                    <ArrowRight className="w-3.5 h-3.5 opacity-40" />
+                  </button>
+                </>
               ) : (
-                /* Staged Documents Workspace (Clean List + Compact Mini-Drop Strip + Launch CTA) */
+                /* Staged Documents State with Start Verification Button */
                 <div className="p-4 rounded-2xl glass-card border border-white/15 space-y-3">
                   <div className="flex items-center justify-between text-xs font-mono text-white pb-2 border-b border-white/10">
                     <span className="flex items-center gap-2 font-semibold">
-                      <Files className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>Staged Documents ({totalStagedCount}/{MAX_TOTAL_STAGED})</span>
+                      <FileText className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>
+                        Selected Documents ({stagedFiles.length}/{MAX_TOTAL_STAGED})
+                      </span>
                     </span>
-                    <span className="text-[10px] text-neutral-400">Budget: ~8,000 words total</span>
+                    <span className="text-[10px] text-neutral-400">Budget: ~8,000 words max</span>
                   </div>
 
-                  {/* List of Staged Files and Notes */}
-                  <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
+                  {/* List of Staged Files */}
+                  <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
                     {stagedFiles.map((file, idx) => (
                       <div
                         key={`file-${idx}`}
                         className="flex items-center justify-between p-2.5 rounded-xl bg-white/[0.04] border border-white/10 text-xs hover:border-white/20 transition-all"
                       >
                         <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                          <FileText className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                          <div className="w-6 h-6 rounded-md bg-white/[0.06] border border-white/10 flex items-center justify-center shrink-0">
+                            <FileText className="w-3 h-3 text-emerald-400" />
+                          </div>
                           <span className="text-white font-mono truncate text-[11px]">{file.name}</span>
                           <span className="text-[10px] text-neutral-400 font-mono shrink-0">
                             ({(file.size / 1024).toFixed(1)} KB)
@@ -530,30 +408,8 @@ export const UploadScreen: React.FC<UploadScreenProps> = ({
                         </div>
                         <button
                           onClick={() => handleRemoveStagedFile(idx)}
-                          className="text-neutral-400 hover:text-rose-400 p-1 rounded-md hover:bg-rose-500/10 transition-colors ml-2"
+                          className="text-neutral-400 hover:text-rose-400 p-1 rounded-md hover:bg-rose-500/10 transition-colors ml-2 cursor-pointer"
                           title="Remove file"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    ))}
-
-                    {stagedNotes.map((note) => (
-                      <div
-                        key={note.id}
-                        className="flex items-center justify-between p-2.5 rounded-xl bg-white/[0.04] border border-white/10 text-xs hover:border-white/20 transition-all"
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                          <FileEdit className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                          <span className="text-white font-mono truncate text-[11px]">{note.title}</span>
-                          <span className="text-[10px] text-neutral-400 font-mono shrink-0">
-                            ({note.text.split(/\s+/).filter(Boolean).length} words)
-                          </span>
-                        </div>
-                        <button
-                          onClick={() => handleRemoveStagedNote(note.id)}
-                          className="text-neutral-400 hover:text-rose-400 p-1 rounded-md hover:bg-rose-500/10 transition-colors ml-2"
-                          title="Remove note"
                         >
                           <X className="w-3.5 h-3.5" />
                         </button>
@@ -561,16 +417,16 @@ export const UploadScreen: React.FC<UploadScreenProps> = ({
                     ))}
                   </div>
 
-                  {/* Compact "+ Add more files" Strip */}
-                  {totalStagedCount < MAX_TOTAL_STAGED && (
+                  {/* Compact "+ Add more documents" Strip */}
+                  {stagedFiles.length < MAX_TOTAL_STAGED && (
                     <div
                       onDragOver={(e) => {
                         e.preventDefault();
                         setIsDragOver(true);
                       }}
                       onDragLeave={() => setIsDragOver(false)}
-                      onDrop={handleMultiDrop}
-                      onClick={() => multiFileInputRef.current?.click()}
+                      onDrop={handleDrop}
+                      onClick={() => addMoreInputRef.current?.click()}
                       className={`w-full py-2.5 px-3 border border-dashed rounded-xl text-center cursor-pointer transition-all flex items-center justify-center gap-2 text-xs ${
                         isDragOver
                           ? "border-emerald-400 bg-emerald-500/10 text-white"
@@ -578,7 +434,7 @@ export const UploadScreen: React.FC<UploadScreenProps> = ({
                       }`}
                     >
                       <input
-                        ref={multiFileInputRef}
+                        ref={addMoreInputRef}
                         type="file"
                         multiple
                         accept=".pdf,.txt,.md"
@@ -590,24 +446,27 @@ export const UploadScreen: React.FC<UploadScreenProps> = ({
                         }}
                       />
                       <Plus className="w-3.5 h-3.5 text-neutral-400" />
-                      <span className="font-mono text-[11px]">+ Add more documents (PDF, TXT, MD)</span>
+                      <span className="font-mono text-[11px]">+ Add another document (PDF, TXT, MD)</span>
                     </div>
                   )}
 
-                  {/* Primary Start Button */}
+                  {/* Prominent Primary Start Verification Button */}
                   <button
-                    onClick={handleStartVerificationSession}
-                    className="w-full py-3 px-4 rounded-xl bg-white text-black text-xs font-semibold hover:bg-neutral-200 transition-all flex items-center justify-center gap-2 tactile-btn shadow-md mt-2"
+                    onClick={handleStartVerification}
+                    className="w-full mt-2 py-3.5 px-4 rounded-xl bg-white text-black text-xs font-bold hover:bg-neutral-200 transition-all flex items-center justify-center gap-2 tactile-btn shadow-lg cursor-pointer"
                   >
-                    <span>Start Multi-Doc Verification ({totalStagedCount} {totalStagedCount === 1 ? "document" : "documents"})</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
+                    <span>
+                      Start Verification ({stagedFiles.length}{" "}
+                      {stagedFiles.length === 1 ? "document" : "documents"})
+                    </span>
+                    <ArrowRight className="w-4 h-4" />
                   </button>
                 </div>
               )}
             </div>
           )}
 
-          {/* TAB 3: Paste Text */}
+          {/* TAB 2: Paste Text */}
           {tabMode === "paste" && !isLoading && (
             <div className="w-full flex flex-col gap-3">
               <input
@@ -624,30 +483,16 @@ export const UploadScreen: React.FC<UploadScreenProps> = ({
                 rows={6}
                 className="w-full p-3.5 rounded-2xl border border-white/15 bg-black/50 backdrop-blur-md text-xs sm:text-sm font-mono text-white placeholder-neutral-500 focus:outline-hidden focus:border-white/40 transition-all resize-none shadow-inner"
               />
-              <div className="flex items-center gap-2">
-                <button
-                  disabled={!pastedText.trim() || totalStagedCount >= MAX_TOTAL_STAGED}
-                  onClick={handleAddStagedNote}
-                  className="flex-1 py-2.5 px-3 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-white text-xs font-medium disabled:opacity-40 transition-all flex items-center justify-center gap-1.5"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Stage into Multi-Doc</span>
-                </button>
-                <button
-                  disabled={isLoading || (!pastedText.trim() && totalStagedCount === 0)}
-                  onClick={() => {
-                    if (pastedText.trim()) {
-                      handleProcessPastedTextSingle(pastedText, pastedTitle.trim() || "pasted-document.txt");
-                    } else {
-                      handleStartVerificationSession();
-                    }
-                  }}
-                  className="flex-1 py-2.5 px-4 rounded-xl bg-white text-black text-xs font-semibold hover:bg-neutral-200 disabled:opacity-40 transition-all flex items-center justify-center gap-2 tactile-btn shadow-md"
-                >
-                  <span>Start Verification</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </button>
-              </div>
+              <button
+                disabled={isLoading || !pastedText.trim()}
+                onClick={() =>
+                  handleProcessPastedText(pastedText, pastedTitle.trim() || "pasted-document.txt")
+                }
+                className="w-full py-3.5 px-4 rounded-xl bg-white text-black text-xs font-semibold hover:bg-neutral-200 disabled:opacity-40 transition-all flex items-center justify-center gap-2 tactile-btn shadow-md cursor-pointer disabled:cursor-not-allowed"
+              >
+                <span>Start Verification</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
             </div>
           )}
 
@@ -655,9 +500,9 @@ export const UploadScreen: React.FC<UploadScreenProps> = ({
           <div className="mt-6 pt-5 border-t border-white/[0.08] flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-neutral-400">
             <span className="text-[11px] text-neutral-500">No PDF on hand? Test the reference demo:</span>
             <button
-              onClick={() => handleProcessPastedTextSingle(SAMPLE_DOCUMENT_TEXT, SAMPLE_DOCUMENT_TITLE)}
+              onClick={() => handleProcessPastedText(SAMPLE_DOCUMENT_TEXT, SAMPLE_DOCUMENT_TITLE)}
               disabled={isLoading}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl glass-card text-white hover:bg-white/[0.1] hover:border-white/30 transition-all text-xs font-medium tactile-btn"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl glass-card text-white hover:bg-white/[0.1] hover:border-white/30 transition-all text-xs font-medium tactile-btn cursor-pointer"
             >
               <Sparkles className="w-3.5 h-3.5 text-white/80" />
               <span>Load Sample Q3 Financial Report</span>
