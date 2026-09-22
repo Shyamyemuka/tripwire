@@ -90,7 +90,7 @@ async function callGeminiWithFailover<T>(
   throw lastError;
 }
 
-export const GENERATION_MODEL = process.env.GEMINI_GENERATION_MODEL || 'gemini-3.6-flash';
+export const GENERATION_MODEL = process.env.GEMINI_GENERATION_MODEL || 'gemini-3.5-flash-lite';
 export const VERDICT_MODEL = process.env.GEMINI_VERDICT_MODEL || 'gemini-3.5-flash-lite';
 export const EXPLANATION_MODEL = process.env.GEMINI_EXPLANATION_MODEL || 'gemini-3.5-flash-lite';
 export const EMBEDDING_MODEL = process.env.GEMINI_EMBEDDING_MODEL || 'gemini-embedding-2';
@@ -110,39 +110,29 @@ export async function* streamAnswerGeneration(
   }
 
   const systemInstruction = `[Context]
-You are answering a user's question using only the document provided
-below as your source of truth. Your answer will be verified sentence-by-
-sentence against this same document by a separate system, so accuracy
-matters more than completeness.
+You are answering a user's question using only the document provided below as your source of truth. Your answer will be verified sentence-by-sentence against this same document by a separate system, so accuracy and grounding are critical.
 
 [Role]
-You are a careful analyst summarizing or answering questions strictly
-from the provided source material.
+You are a knowledgeable analytical assistant explaining source material clearly, comprehensively, and factually.
 
 [Instruction]
-Answer the QUESTION using only information in the DOCUMENT. Write in
-clear, complete sentences. Do not add information the document doesn't
-contain.
-
-[Specifics]
-- If the document doesn't address part of the question, say so explicitly
-  rather than inferring or guessing.
-- Prefer precise numbers, dates, and direction words exactly as stated in
-  the document over paraphrased or rounded versions.
+Answer the QUESTION thoroughly and informatively using only information from the DOCUMENT.
+Provide a clear, detailed, multi-sentence response that covers all relevant facts, numbers, dates, sections, and metrics present in the document.
+Structure your answer into distinct, complete sentences so each individual factual claim can be independently verified.
+Do not artificially compress your answer into a single sentence when the document contains multiple relevant details or steps.
+If the document does not cover a specific part of the question, state that clearly rather than guessing.
 
 [Personality]
-Neutral, factual, concise. No filler sentences like "This is an
-interesting question" — every sentence should carry either an answer or
-an explicit statement that the document doesn't cover something.`;
+Neutral, factual, informative, and direct.`;
 
-function extractRelevantContext(documentText: string, question: string, maxChars = 3200): string {
+function extractRelevantContext(documentText: string, question: string, maxChars = 5500): string {
   if (documentText.length <= maxChars) {
     return documentText;
   }
   const STOPWORDS = new Set([
     'a', 'an', 'the', 'in', 'on', 'at', 'for', 'to', 'of', 'and', 'or', 'is', 'are',
     'was', 'were', 'what', 'which', 'who', 'how', 'why', 'when', 'where', 'this',
-    'that', 'these', 'those', 'here', 'there', 'used', 'project', 'system'
+    'that', 'these', 'those', 'here', 'there'
   ]);
   const words = question.toLowerCase().match(/\b[a-z0-9_]{3,}\b/g) || [];
   const keywords = words.filter(w => !STOPWORDS.has(w));
@@ -190,8 +180,8 @@ function extractRelevantContext(documentText: string, question: string, maxChars
   return selected.join('\n\n') + "\n\n[... Note: document context budgeted for model token limits ...]";
 }
 
-  // Budget document text so prompt stays comfortably within HiDevs' 4,000 token limit
-  const budgetedDocText = extractRelevantContext(documentText, question, 3200);
+  // Budget document text so prompt stays comfortably within HiDevs token limits
+  const budgetedDocText = extractRelevantContext(documentText, question, 5500);
 
   const prompt = `DOCUMENT:
 ${budgetedDocText}
@@ -202,44 +192,41 @@ ${question}`;
   // 1. Primary: HiDevs LLM Gateway (100k Credits for Hackathon Arena)
   if (hidevsKey) {
     try {
-      let res = await fetch(`${HIDEVS_BASE_URL}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${hidevsKey}`
-        },
-        body: JSON.stringify({
-          model: GENERATION_MODEL,
-          messages: [
-            { role: 'system', content: systemInstruction },
-            { role: 'user', content: prompt }
-          ],
-          max_tokens: 500,
-          temperature: 0.2,
-          stream: true
-        })
-      });
-
-      // If primary model hits a 429 per-minute rate limit, retry with gemini-3.5-flash-lite
-      if (!res.ok && res.status === 429 && GENERATION_MODEL !== 'gemini-3.5-flash-lite') {
-        console.warn('HiDevs 429 on primary model, retrying with gemini-3.5-flash-lite...');
-        res = await fetch(`${HIDEVS_BASE_URL}/chat/completions`, {
+      const makeHiDevsRequest = async (targetModel: string) => {
+        return fetch(`${HIDEVS_BASE_URL}/chat/completions`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${hidevsKey}`
           },
           body: JSON.stringify({
-            model: 'gemini-3.5-flash-lite',
+            model: targetModel,
             messages: [
               { role: 'system', content: systemInstruction },
               { role: 'user', content: prompt }
             ],
-            max_tokens: 500,
+            max_tokens: 1500,
             temperature: 0.2,
             stream: true
           })
         });
+      };
+
+      let res: Response | null = null;
+      try {
+        res = await makeHiDevsRequest(GENERATION_MODEL);
+      } catch (networkErr) {
+        // Retry once on transient network/connection timeout
+        console.warn('HiDevs initial connection glitch, retrying in 500ms...', networkErr);
+        await new Promise(r => setTimeout(r, 500));
+        res = await makeHiDevsRequest(GENERATION_MODEL);
+      }
+
+      // If primary model hits a 429 per-minute rate limit, retry with gemini-3.5-flash-lite
+      if (!res.ok && res.status === 429 && GENERATION_MODEL !== 'gemini-3.5-flash-lite') {
+        console.warn('HiDevs 429 on primary model, retrying with gemini-3.5-flash-lite...');
+        await new Promise(r => setTimeout(r, 600));
+        res = await makeHiDevsRequest('gemini-3.5-flash-lite');
       }
 
       if (!res.ok) {
@@ -469,7 +456,7 @@ ANSWER:`;
           messages: [
             { role: 'user', content: prompt }
           ],
-          max_tokens: 15,
+          max_tokens: 50,
           temperature: 0.0,
           stream: false
         })
@@ -489,7 +476,7 @@ ANSWER:`;
             messages: [
               { role: 'user', content: prompt }
             ],
-            max_tokens: 15,
+            max_tokens: 50,
             temperature: 0.0,
             stream: false
           })
