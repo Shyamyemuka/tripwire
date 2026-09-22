@@ -161,29 +161,6 @@ export const QAThread: React.FC<QAThreadProps> = ({
         <p className="text-xs text-[#A8B1BF] max-w-sm mt-1.5 leading-relaxed">
           Ask any question below. Tripwire extracts sentences on the fly and verifies them against source passages as tokens stream in.
         </p>
-
-        {/* Quick Sample Questions for Hackathon Judging */}
-        {onSelectSampleQuestion && (
-          <div className="mt-6 w-full max-w-md space-y-2 text-left animate-blur-fade-up">
-            <span className="text-[10px] uppercase font-mono tracking-wider text-neutral-500 block text-center">
-              Quick Start Demo Questions
-            </span>
-            {[
-              "Summarise the financial highlights and revenue performance.",
-              "What happened to operating costs and workforce headcount?",
-              "Detail the gross margin and R&D expenditures.",
-            ].map((sampleQ, sIdx) => (
-              <button
-                key={sIdx}
-                onClick={() => onSelectSampleQuestion(sampleQ)}
-                className="w-full p-2.5 rounded-xl border border-white/10 bg-white/[0.03] hover:bg-white/[0.08] hover:border-white/20 text-xs text-white text-left transition-all flex items-center justify-between group tactile-btn"
-              >
-                <span className="truncate">&ldquo;{sampleQ}&rdquo;</span>
-                <span className="text-[10px] font-mono text-neutral-400 group-hover:text-white shrink-0 ml-2">Ask →</span>
-              </button>
-            ))}
-          </div>
-        )}
       </div>
     );
   }
