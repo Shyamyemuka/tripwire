@@ -123,7 +123,7 @@ export const UploadScreen: React.FC<UploadScreenProps> = ({
   };
 
   return (
-    <div className="relative min-h-screen w-full flex flex-col justify-between p-4 sm:p-8 md:p-12 bg-[#000000] text-white selection:bg-white/20 selection:text-white">
+    <div className="relative z-10 min-h-screen w-full flex flex-col justify-between p-4 sm:p-8 md:p-12 bg-transparent text-white selection:bg-white/20 selection:text-white">
       {/* Top Header */}
       <div className="relative z-10 max-w-3xl mx-auto w-full flex items-center justify-between pt-2 pb-6">
         <div className="flex items-center gap-2">
