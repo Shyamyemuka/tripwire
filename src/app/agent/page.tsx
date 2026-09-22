@@ -9,6 +9,7 @@ import { QuestionInput } from "@/components/QuestionInput";
 import { SourcePanel } from "@/components/SourcePanel";
 import { ChatHistorySidebar } from "@/components/ChatHistorySidebar";
 import { AnalyticsModal } from "@/components/AnalyticsModal";
+import { BackgroundPixelStars } from "@/components/ui/background-pixel-stars";
 import { SentenceDetector } from "@/lib/sentence-boundary";
 import {
   saveConversation,
@@ -634,7 +635,10 @@ function AgentWorkspace() {
   }, [documentMeta, qaTurns, totalClaimsVerified, avgRetrievalLatencyMs]);
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#000000] text-white font-sans selection:bg-white/20 selection:text-white">
+    <div className="min-h-screen flex flex-col bg-[#000000] bg-[url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAIElEQVR42mIUEhJiwAbevXuHVZyJgUQwqmEUDB0AEGAADd8DEPTX6ksAAAAASUVORUS5CYII=')] bg-[size:10px] text-white font-sans selection:bg-white/20 selection:text-white relative">
+      {/* 16-Bit Pixel Stars Shader Background */}
+      <BackgroundPixelStars />
+
       {/* Saved Sessions Sidebar */}
       <ChatHistorySidebar
         isOpen={isHistoryOpen}
@@ -651,7 +655,7 @@ function AgentWorkspace() {
           onOpenHistory={() => setIsHistoryOpen(true)}
         />
       ) : (
-        <div className="flex-1 flex flex-col min-h-screen">
+        <div className="relative z-10 flex-1 flex flex-col min-h-screen">
           <TopBar
             documentMeta={documentMeta}
             mode={mode}

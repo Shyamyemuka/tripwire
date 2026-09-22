@@ -96,9 +96,9 @@ export const ChatHistorySidebar: React.FC<ChatHistorySidebarProps> = ({
       />
 
       {/* Drawer */}
-      <aside className="fixed inset-y-0 left-0 w-80 sm:w-96 bg-[#080808] border-r border-white/10 z-50 flex flex-col shadow-2xl animate-blur-fade-up">
+      <aside className="fixed inset-y-0 left-0 w-80 sm:w-96 glass-panel border-r border-white/15 z-50 flex flex-col shadow-2xl animate-blur-fade-up bg-black/80 backdrop-blur-2xl">
         {/* Header */}
-        <div className="p-4 border-b border-white/10 flex items-center justify-between bg-black">
+        <div className="p-4 border-b border-white/15 flex items-center justify-between bg-black/60 backdrop-blur-md">
           <div className="flex items-center gap-2">
             <Clock className="w-4 h-4 text-white" />
             <span className="font-medium text-sm tracking-wide text-white font-sans">
@@ -107,20 +107,20 @@ export const ChatHistorySidebar: React.FC<ChatHistorySidebarProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-white/5 transition-colors"
+            className="p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-white/10 transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* New Document Action (Black/White/Warm styling - No Blue) */}
-        <div className="p-3 border-b border-white/5">
+        <div className="p-3 border-b border-white/10">
           <button
             onClick={() => {
               onNewDocument();
               onClose();
             }}
-            className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg bg-white text-black hover:bg-neutral-200 text-xs font-semibold tracking-wide transition-all shadow-sm tactile-btn"
+            className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-white text-black hover:bg-neutral-200 text-xs font-semibold tracking-wide transition-all shadow-md tactile-btn"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>+ New Document / Chat</span>
@@ -151,10 +151,10 @@ export const ChatHistorySidebar: React.FC<ChatHistorySidebarProps> = ({
                     onSelectConversation(item.id);
                     onClose();
                   }}
-                  className={`group relative flex flex-col p-3 rounded-xl border transition-all cursor-pointer ${
+                  className={`group relative flex flex-col p-3.5 rounded-2xl border transition-all cursor-pointer ${
                     isActive
-                      ? "bg-white/10 border-white/30 text-white shadow-sm"
-                      : "bg-white/[0.02] border-white/[0.06] hover:bg-white/[0.05] hover:border-white/15 text-neutral-300"
+                      ? "bg-white/20 border-white/40 text-white shadow-md backdrop-blur-md"
+                      : "glass-card text-neutral-300 hover:bg-white/10 hover:border-white/25"
                   }`}
                 >
                   <div className="flex items-start justify-between gap-2">

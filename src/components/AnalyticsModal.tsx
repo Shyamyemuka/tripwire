@@ -73,9 +73,9 @@ export const AnalyticsModal: React.FC<AnalyticsModalProps> = ({
       <div onClick={onClose} className="fixed inset-0 bg-black/80 backdrop-blur-sm animate-fade-in" />
 
       {/* Modal Box */}
-      <div className="relative z-10 w-full max-w-lg bg-[#0D0B0A] border border-white/10 rounded-2xl shadow-2xl p-6 space-y-6 animate-blur-fade-up">
+      <div className="relative z-10 w-full max-w-lg glass-panel border border-white/15 rounded-3xl shadow-2xl p-6 space-y-6 animate-blur-fade-up bg-black/80 backdrop-blur-2xl">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-white/[0.08] pb-4">
+        <div className="flex items-center justify-between border-b border-white/15 pb-4">
           <div className="flex items-center gap-2.5">
             <BarChart3 className="w-5 h-5 text-white" />
             <span className="text-sm font-semibold uppercase tracking-wider text-white">
@@ -85,14 +85,14 @@ export const AnalyticsModal: React.FC<AnalyticsModalProps> = ({
           <button
             onClick={onClose}
             aria-label="Close scorecard"
-            className="p-1 rounded-lg text-neutral-400 hover:text-white hover:bg-white/5 transition-colors"
+            className="p-1 rounded-lg text-neutral-400 hover:text-white hover:bg-white/10 transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Big Groundedness Index Gauge */}
-        <div className="flex items-center justify-between bg-white/[0.02] p-4 rounded-xl border border-white/[0.08]">
+        <div className="flex items-center justify-between glass-card p-4.5 rounded-2xl border border-white/15">
           <div className="space-y-1">
             <div className="text-[11px] font-mono uppercase tracking-wider text-neutral-400">
               Groundedness Index
@@ -108,7 +108,7 @@ export const AnalyticsModal: React.FC<AnalyticsModalProps> = ({
               </span>
             </div>
           </div>
-          <div className="w-12 h-12 rounded-full border-2 border-emerald-500/40 bg-emerald-500/10 flex items-center justify-center text-emerald-400">
+          <div className="w-12 h-12 rounded-full border-2 border-emerald-500/40 bg-emerald-500/10 flex items-center justify-center text-emerald-400 shadow-md">
             <ShieldCheck className="w-6 h-6" />
           </div>
         </div>

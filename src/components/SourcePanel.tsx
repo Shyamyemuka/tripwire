@@ -93,9 +93,9 @@ export const SourcePanel: React.FC<SourcePanelProps> = ({
       />
 
       {/* Drawer Surface */}
-      <div className="relative z-10 w-full sm:max-w-[440px] md:max-w-[480px] h-full bg-[#0D0B0A] border-l border-white/10 shadow-2xl flex flex-col transition-all duration-300 animate-blur-fade-up">
+      <div className="relative z-10 w-full sm:max-w-[440px] md:max-w-[480px] h-full glass-panel border-l border-white/15 shadow-2xl flex flex-col transition-all duration-300 animate-blur-fade-up backdrop-blur-2xl bg-black/75">
         {/* Header */}
-        <div className="px-5 py-4 border-b border-white/[0.08] flex items-center justify-between bg-[#080808]">
+        <div className="px-5 py-4 border-b border-white/15 flex items-center justify-between bg-black/60 backdrop-blur-md">
           <div className="flex items-center gap-2">
             <FileText className="w-4 h-4 text-white" />
             <span className="text-xs font-semibold uppercase tracking-wider text-white">
@@ -105,7 +105,7 @@ export const SourcePanel: React.FC<SourcePanelProps> = ({
           <button
             onClick={onClose}
             aria-label="Close source panel"
-            className="p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-white/5 transition-colors"
+            className="p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-white/10 transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
@@ -114,7 +114,7 @@ export const SourcePanel: React.FC<SourcePanelProps> = ({
         {/* Content Area */}
         <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-6">
           {/* Status & Latency Card */}
-          <div className="flex items-center justify-between bg-white/[0.02] p-3.5 rounded-xl border border-white/[0.08]">
+          <div className="flex items-center justify-between glass-card p-3.5 rounded-2xl border border-white/15">
             <div>{getVerdictBadge()}</div>
             <div className="text-right text-[11px] font-mono text-neutral-400 space-y-0.5">
               <div className="flex items-center gap-1.5 justify-end text-neutral-300">
@@ -132,7 +132,7 @@ export const SourcePanel: React.FC<SourcePanelProps> = ({
             <label className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wider block mb-1.5">
               Generated Claim
             </label>
-            <div className="p-3.5 rounded-xl bg-black text-xs sm:text-sm font-medium text-white border border-white/10 leading-relaxed">
+            <div className="p-3.5 rounded-2xl glass-card text-xs sm:text-sm font-medium text-white border border-white/15 leading-relaxed bg-black/50">
               &ldquo;{sentenceRecord.text}&rdquo;
             </div>
           </div>

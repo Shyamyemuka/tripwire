@@ -172,10 +172,10 @@ export const UploadScreen: React.FC<UploadScreenProps> = ({
 
       {/* Centered Workspace Card */}
       <div className="relative z-10 flex-1 flex flex-col items-center justify-center max-w-xl mx-auto w-full">
-        <div className="w-full bg-[#080808] rounded-2xl p-6 sm:p-8 border border-white/10 shadow-[0_20px_60px_rgba(0,0,0,0.8)]">
+        <div className="w-full glass-panel rounded-3xl p-6 sm:p-8 border border-white/15 shadow-[0_20px_60px_rgba(0,0,0,0.8)] backdrop-blur-2xl">
           {/* Eyebrow and Headline */}
           <div className="text-center mb-6">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/[0.05] text-neutral-300 text-[10px] font-mono tracking-wider uppercase mb-3 border border-white/10">
+            <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full glass-badge text-neutral-300 text-[10px] font-mono tracking-wider uppercase mb-3">
               DOCUMENT INTAKE
             </div>
             <h1 className="text-2xl sm:text-3xl font-medium tracking-tight text-white">
@@ -187,15 +187,15 @@ export const UploadScreen: React.FC<UploadScreenProps> = ({
           </div>
 
           {/* Mode Tabs */}
-          <div className="flex w-full bg-black p-1 rounded-xl mb-5 border border-white/10">
+          <div className="flex w-full bg-black/60 p-1 rounded-2xl mb-5 border border-white/15 backdrop-blur-xl">
             <button
               onClick={() => {
                 setTabMode("upload");
                 setErrorMessage(null);
               }}
-              className={`flex-1 flex items-center justify-center gap-2 py-2 text-xs font-medium rounded-lg transition-all ${
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-xs font-medium rounded-xl transition-all ${
                 tabMode === "upload"
-                  ? "bg-white/10 text-white shadow-xs border border-white/15"
+                  ? "bg-white/15 text-white shadow-md border border-white/20 backdrop-blur-md"
                   : "text-neutral-400 hover:text-white"
               }`}
             >
@@ -207,9 +207,9 @@ export const UploadScreen: React.FC<UploadScreenProps> = ({
                 setTabMode("paste");
                 setErrorMessage(null);
               }}
-              className={`flex-1 flex items-center justify-center gap-2 py-2 text-xs font-medium rounded-lg transition-all ${
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-xs font-medium rounded-lg transition-all ${
                 tabMode === "paste"
-                  ? "bg-white/10 text-white shadow-xs border border-white/15"
+                  ? "bg-white/15 text-white shadow-md border border-white/20 backdrop-blur-md"
                   : "text-neutral-400 hover:text-white"
               }`}
             >
@@ -220,7 +220,7 @@ export const UploadScreen: React.FC<UploadScreenProps> = ({
 
           {/* Error Banner */}
           {errorMessage && (
-            <div className="w-full mb-4 p-3 rounded-xl bg-rose-950/20 border border-rose-500/20 text-rose-300 text-xs flex items-start gap-2.5">
+            <div className="w-full mb-4 p-3 rounded-xl bg-rose-950/30 border border-rose-500/30 text-rose-300 text-xs flex items-start gap-2.5 backdrop-blur-md">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-400" />
               <span>{errorMessage}</span>
             </div>
@@ -228,7 +228,7 @@ export const UploadScreen: React.FC<UploadScreenProps> = ({
 
           {/* Indexing Progress Indicator */}
           {isLoading && (
-            <div className="mb-6 p-4 rounded-xl bg-white/[0.02] border border-white/10 space-y-3">
+            <div className="mb-6 p-4 rounded-2xl glass-card space-y-3">
               <div className="flex items-center justify-between text-xs font-mono text-white">
                 <span className="flex items-center gap-2">
                   <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
@@ -252,9 +252,9 @@ export const UploadScreen: React.FC<UploadScreenProps> = ({
                   return (
                     <div
                       key={step.id}
-                      className={`p-1.5 rounded-md border text-center transition-all ${
+                      className={`p-1.5 rounded-lg border text-center transition-all ${
                         isCurrent
-                          ? "bg-white/20 border-white/40 text-white font-semibold"
+                          ? "bg-white/25 border-white/50 text-white font-semibold shadow-sm backdrop-blur-md"
                           : isDone
                           ? "bg-white/[0.08] border-white/20 text-white/80"
                           : "bg-white/[0.02] border-white/[0.06] text-neutral-500"
@@ -280,8 +280,8 @@ export const UploadScreen: React.FC<UploadScreenProps> = ({
               onClick={() => fileInputRef.current?.click()}
               className={`w-full border rounded-2xl p-8 text-center cursor-pointer transition-all flex flex-col items-center justify-center min-h-[210px] group ${
                 isDragOver
-                  ? "border-white/60 bg-white/[0.05]"
-                  : "border-dashed border-white/20 hover:border-white/40 hover:bg-white/[0.02] bg-black/40"
+                  ? "border-white/60 bg-white/[0.08] backdrop-blur-xl"
+                  : "border-dashed border-white/20 hover:border-white/40 hover:bg-white/[0.04] bg-black/30 backdrop-blur-md"
               }`}
             >
               <input
@@ -295,7 +295,7 @@ export const UploadScreen: React.FC<UploadScreenProps> = ({
                   }
                 }}
               />
-              <div className="w-12 h-12 rounded-full bg-white/[0.04] border border-white/10 flex items-center justify-center text-neutral-400 group-hover:text-white group-hover:border-white/30 transition-all mb-3">
+              <div className="w-12 h-12 rounded-full glass-card border border-white/20 flex items-center justify-center text-neutral-400 group-hover:text-white group-hover:border-white/40 transition-all mb-3 shadow-md">
                 <UploadCloud className="w-5 h-5" />
               </div>
               <p className="text-sm font-medium text-white">
@@ -318,7 +318,7 @@ export const UploadScreen: React.FC<UploadScreenProps> = ({
                 onChange={(e) => setPastedText(e.target.value)}
                 placeholder="Paste source material here (e.g. quarterly earnings report, legal contract, clinical study, product spec)..."
                 rows={7}
-                className="w-full p-3.5 rounded-xl border border-white/10 bg-black text-xs sm:text-sm font-mono text-white placeholder-neutral-500 focus:outline-hidden focus:border-white/30 transition-all resize-none"
+                className="w-full p-3.5 rounded-2xl border border-white/15 bg-black/50 backdrop-blur-md text-xs sm:text-sm font-mono text-white placeholder-neutral-500 focus:outline-hidden focus:border-white/40 transition-all resize-none shadow-inner"
               />
               <button
                 disabled={isLoading || !pastedText.trim()}
@@ -337,7 +337,7 @@ export const UploadScreen: React.FC<UploadScreenProps> = ({
             <button
               onClick={() => handleProcessPastedText(SAMPLE_DOCUMENT_TEXT, SAMPLE_DOCUMENT_TITLE)}
               disabled={isLoading}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/10 bg-white/[0.04] text-white hover:bg-white/[0.08] hover:border-white/20 transition-all text-xs font-medium tactile-btn"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl glass-card text-white hover:bg-white/[0.1] hover:border-white/30 transition-all text-xs font-medium tactile-btn"
             >
               <Sparkles className="w-3.5 h-3.5 text-white/80" />
               <span>Load Sample Q3 Financial Report</span>

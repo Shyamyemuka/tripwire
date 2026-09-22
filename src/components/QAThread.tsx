@@ -208,17 +208,17 @@ export const QAThread: React.FC<QAThreadProps> = ({
           <div key={turn.turnId || tIdx} className="space-y-4 animate-blur-fade-up">
             {/* User Question */}
             <div className="flex items-start gap-3 justify-end">
-              <div className="bg-[#141210] text-white px-4 py-3 rounded-2xl rounded-tr-xs text-sm font-medium max-w-xl shadow-md border border-white/10">
+              <div className="glass-card text-white px-4 py-3 rounded-2xl rounded-tr-xs text-sm font-medium max-w-xl shadow-lg border border-white/15 bg-white/[0.08] backdrop-blur-xl">
                 {turn.questionText}
               </div>
-              <div className="w-7 h-7 rounded-full bg-white/[0.08] border border-white/10 flex items-center justify-center text-neutral-300 shrink-0 mt-0.5">
+              <div className="w-7 h-7 rounded-full glass-card border border-white/20 flex items-center justify-center text-neutral-300 shrink-0 mt-0.5 shadow-md">
                 <User className="w-4 h-4" />
               </div>
             </div>
 
             {/* Assistant Streamed & Verified Answer */}
             <div className="flex items-start gap-3 justify-start">
-              <div className="w-7 h-7 rounded-full overflow-hidden border border-white/20 flex items-center justify-center shrink-0 mt-0.5 bg-black p-0.5 shadow-sm">
+              <div className="w-7 h-7 rounded-full overflow-hidden border border-white/20 flex items-center justify-center shrink-0 mt-0.5 bg-black p-0.5 shadow-md">
                 <Image
                   src="/icon.png"
                   alt="Tripwire AI"
@@ -228,7 +228,7 @@ export const QAThread: React.FC<QAThreadProps> = ({
                 />
               </div>
 
-              <div className="flex-1 bg-[#080808] p-5 sm:p-6 rounded-2xl rounded-tl-xs border border-white/10 shadow-lg space-y-4">
+              <div className="flex-1 glass-panel p-5 sm:p-6 rounded-2xl rounded-tl-xs border border-white/15 shadow-2xl space-y-4 backdrop-blur-2xl">
                 {/* Turn Header Tag */}
                 <div className="flex items-center justify-between text-[10px] text-neutral-500 font-mono pb-2.5 border-b border-white/[0.06]">
                   <div className="flex items-center gap-2">

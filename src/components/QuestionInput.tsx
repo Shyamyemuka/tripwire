@@ -231,7 +231,7 @@ export const QuestionInput: React.FC<QuestionInputProps> = ({
   };
 
   return (
-    <div className="border-t border-white/[0.08] bg-black/80 backdrop-blur-xl p-4 sm:p-5 sticky bottom-0 z-30 transition-colors">
+    <div className="glass-nav border-t border-white/15 bg-black/60 backdrop-blur-2xl p-4 sm:p-5 sticky bottom-0 z-30 transition-colors">
       <div className="max-w-4xl mx-auto space-y-2.5">
         {/* Validation Error Message */}
         {validationError && (
@@ -243,7 +243,7 @@ export const QuestionInput: React.FC<QuestionInputProps> = ({
 
         {/* ACTIVE VOICE RECORDING / TRANSCRIBING CONTROL BAR */}
         {isRecording || isTranscribing ? (
-          <div className="flex items-center justify-center p-2 rounded-full border border-white/10 bg-white/[0.04] backdrop-blur-xl shadow-[0_4px_20px_rgba(0,0,0,0.5)] animate-fade-in">
+          <div className="flex items-center justify-center p-2 rounded-full glass-panel border border-white/20 shadow-2xl animate-fade-in">
             {isTranscribing ? (
               <div className="flex items-center gap-2.5 px-4 py-1 text-xs text-neutral-300 font-medium">
                 <Loader2 className="w-4 h-4 animate-spin text-white" />
@@ -281,7 +281,7 @@ export const QuestionInput: React.FC<QuestionInputProps> = ({
                   ? "Answer streaming & verifying claim by claim..."
                   : "Ask a question or click the mic to speak..."
               }
-              className="w-full pl-5 pr-28 py-3.5 rounded-full border border-white/10 bg-white/[0.03] text-sm text-white placeholder-white/40 focus:outline-hidden focus:border-white/40 focus:ring-1 focus:ring-white/20 shadow-[0_4px_20px_rgba(0,0,0,0.5)] disabled:opacity-50 transition-all font-sans"
+              className="w-full pl-5 pr-28 py-3.5 rounded-full border border-white/20 bg-white/[0.05] backdrop-blur-xl text-sm text-white placeholder-white/40 focus:outline-hidden focus:border-white/50 focus:ring-1 focus:ring-white/30 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] disabled:opacity-50 transition-all font-sans"
             />
 
             <div className="absolute right-2 flex items-center gap-1.5">
