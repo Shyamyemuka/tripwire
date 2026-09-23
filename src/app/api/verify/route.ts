@@ -5,6 +5,8 @@ import { queryBaselineCosine } from '@/lib/baseline';
 import { classifySentenceVerdict } from '@/lib/gemini';
 import { CandidatePassage, ChunkRecord } from '@/lib/types';
 
+export const maxDuration = 60; // Allow up to 60 seconds on Vercel for verification
+
 export async function POST(req: NextRequest) {
   try {
     const { sentence, sessionId, mode = 'moss', chunks: clientChunks, turnId, sentenceId } = await req.json();

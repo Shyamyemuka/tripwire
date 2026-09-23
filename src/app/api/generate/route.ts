@@ -3,6 +3,8 @@ import { streamAnswerGeneration, parseFriendlyErrorMessage } from '@/lib/gemini'
 
 import { getRedisSession, updateRedisSession } from '@/lib/redis';
 
+export const maxDuration = 60; // Allow up to 60 seconds on Vercel for streaming generation
+
 export async function POST(req: NextRequest) {
   try {
     const { question, documentText, sessionId, isStressTestMode } = await req.json();

@@ -121,7 +121,7 @@ You are answering a user's question about the document provided below.
 [CRITICAL ADVERSARIAL STRESS-TEST]
 To test an automated real-time fact-checking system, you MUST intentionally alter 1 or 2 specific factual figures, numbers, percentages, or trend directions in your answer (for example, state a different revenue amount, flip "increased" to "decreased", or alter key dates/metrics). Make the tone natural and plausible.
 [Instruction]
-Provide a clear, detailed, multi-sentence response.
+You MUST write a comprehensive, multi-sentence response (at least 4 to 6 detailed, complete sentences).
 Answer directly without conversational preambles like "Based on the provided document...".`
     : `[Context]
 You are answering a user's question using only the document provided below as your source of truth. Your answer will be verified sentence-by-sentence against this same document by a separate system, so accuracy and grounding are critical.
@@ -131,72 +131,97 @@ You are a knowledgeable analytical assistant explaining source material clearly,
 
 [Instruction]
 Answer the QUESTION thoroughly and informatively using only information from the DOCUMENT.
-Provide a clear, detailed, multi-sentence response that covers all relevant facts, numbers, dates, sections, and metrics present in the document.
-Structure your answer into distinct, complete sentences so each individual factual claim can be independently verified.
-Do not artificially compress your answer into a single sentence when the document contains multiple relevant details or steps.
-If the document does not cover a specific part of the question, state that clearly rather than guessing.
-Answer directly without conversational preambles like "Based on the provided document...".
+You MUST write a comprehensive, multi-sentence response (at least 4 to 6 detailed, complete sentences).
+Even for direct or yes/no questions, detail the underlying background, specific document findings, numbers or timeframes mentioned, organizational implications, and recommended actions from the document so each individual claim can be independently verified.
+Structure your answer into distinct, complete sentences.
+NEVER provide a brief 1 or 2 sentence response.
+If the document does not cover a specific part of the question, state that clearly while explaining what related details the document does provide.
+CRITICAL FORMATTING: NEVER include conversational preambles like "Based on the provided document...", "According to the document...", or "The document states...". Start immediately with the factual answer.
 
 [Personality]
 Neutral, factual, informative, and direct.`;
 
-function extractRelevantContext(documentText: string, question: string, maxChars = 5500): string {
+function extractRelevantContext(documentText: string, question: string, maxChars = 24000): string {
   if (documentText.length <= maxChars) {
     return documentText;
   }
   const STOPWORDS = new Set([
     'a', 'an', 'the', 'in', 'on', 'at', 'for', 'to', 'of', 'and', 'or', 'is', 'are',
     'was', 'were', 'what', 'which', 'who', 'how', 'why', 'when', 'where', 'this',
-    'that', 'these', 'those', 'here', 'there'
+    'that', 'these', 'those', 'here', 'there', 'does', 'did', 'can', 'could', 'should'
   ]);
   const words = question.toLowerCase().match(/\b[a-z0-9_]{3,}\b/g) || [];
   const keywords = words.filter(w => !STOPWORDS.has(w));
-  if (keywords.length === 0) {
+
+  // Split into smaller segments of ~150 words (~900 chars) for high-resolution matching
+  const rawSegments = documentText.split(/\n+/).map(s => s.trim()).filter(Boolean);
+  const segments: string[] = [];
+  for (const seg of rawSegments) {
+    if (seg.length <= 1200) {
+      segments.push(seg);
+    } else {
+      const wordsArr = seg.split(' ');
+      for (let i = 0; i < wordsArr.length; i += 150) {
+        segments.push(wordsArr.slice(i, i + 150).join(' '));
+      }
+    }
+  }
+
+  if (keywords.length === 0 || segments.length <= 5) {
     return documentText.slice(0, maxChars) + "\n\n[... Note: document context budgeted for model token limits ...]";
   }
-  const paragraphs = documentText.split(/\n\s*\n/);
-  const selected: string[] = [];
+
+  // Always keep the document header / first 2 segments for context
+  const selectedIndices = new Set<number>();
   let currentLen = 0;
-  const intro = paragraphs.slice(0, 3).join('\n\n');
-  if (intro.length < maxChars * 0.35) {
-    selected.push(intro);
-    currentLen += intro.length;
+  for (let i = 0; i < Math.min(2, segments.length); i++) {
+    selectedIndices.add(i);
+    currentLen += segments[i].length + 2;
   }
-  const scored: Array<{ text: string; score: number; index: number }> = [];
-  for (let i = 3; i < paragraphs.length; i++) {
-    const p = paragraphs[i].trim();
-    if (p.length < 30) continue;
-    const pLower = p.toLowerCase();
+
+  // Score remaining segments by keyword matches
+  const scored: Array<{ index: number; score: number }> = [];
+  for (let i = 2; i < segments.length; i++) {
+    const sLower = segments[i].toLowerCase();
     let score = 0;
     for (const kw of keywords) {
-      const matches = (pLower.match(new RegExp('\\b' + kw, 'g')) || []).length;
-      score += matches * 2;
+      const matches = (sLower.match(new RegExp('\\b' + kw, 'g')) || []).length;
+      score += matches * 3;
     }
-    if (score > 0) scored.push({ text: p, score, index: i });
+    if (score > 0) scored.push({ index: i, score });
   }
+
   scored.sort((a, b) => b.score - a.score);
-  const chosenIndices = new Set<number>();
+
   for (const item of scored) {
-    if (currentLen + item.text.length + 10 > maxChars) continue;
-    selected.push(item.text);
-    currentLen += item.text.length + 2;
-    chosenIndices.add(item.index);
-    if (currentLen >= maxChars - 300) break;
+    const segText = segments[item.index];
+    if (currentLen + segText.length + 10 > maxChars) continue;
+    selectedIndices.add(item.index);
+    currentLen += segText.length + 2;
+    if (currentLen >= maxChars - 500) break;
   }
-  if (currentLen < maxChars * 0.5) {
-    for (let i = 3; i < paragraphs.length; i++) {
-      if (chosenIndices.has(i)) continue;
-      const p = paragraphs[i].trim();
-      if (currentLen + p.length > maxChars) break;
-      selected.push(p);
-      currentLen += p.length + 2;
+
+  // Fill in order if extra space remains
+  if (currentLen < maxChars * 0.7) {
+    for (let i = 2; i < segments.length; i++) {
+      if (selectedIndices.has(i)) continue;
+      const segText = segments[i];
+      if (currentLen + segText.length > maxChars) break;
+      selectedIndices.add(i);
+      currentLen += segText.length + 2;
     }
   }
-  return selected.join('\n\n') + "\n\n[... Note: document context budgeted for model token limits ...]";
+
+  // Render selected segments in their original document order
+  const orderedSegments = Array.from(selectedIndices)
+    .sort((a, b) => a - b)
+    .map(idx => segments[idx]);
+
+  return orderedSegments.join('\n\n');
 }
 
-  // Budget document text so prompt stays lean (~700-800 tokens max)
-  const budgetedDocText = extractRelevantContext(documentText, question, 3500);
+  // Budget document text comfortably (24,000 chars covers 15+ pages completely)
+  const budgetedDocText = extractRelevantContext(documentText, question, 24000);
 
   const prompt = `DOCUMENT:
 ${budgetedDocText}
@@ -291,9 +316,12 @@ ${question}`;
 
   // 2. Direct Gemini Multi-Key Failover
   const candidateModels = [
+    'gemini-3.6-flash',
+    'gemini-2.5-flash',
+    'gemini-2.0-flash',
     GENERATION_MODEL,
-    VERDICT_MODEL !== GENERATION_MODEL ? VERDICT_MODEL : null
-  ].filter((m): m is string => Boolean(m));
+    VERDICT_MODEL,
+  ].filter((m, idx, arr): m is string => Boolean(m) && arr.indexOf(m) === idx);
 
   let activeIterator: AsyncIterator<{ text?: string }> | null = null;
   let firstChunkText: string | null = null;
