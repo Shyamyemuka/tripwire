@@ -455,10 +455,10 @@ export async function classifySentenceVerdict(
     };
   }
 
-  // Pass max 2 top candidates, trimmed to 100 words each to conserve 80% tokens
-  const topPassages = passages.slice(0, 2);
+  // Pass top 3 candidate passages with full text (up to 1200 chars each) to ensure complete evidence is visible
+  const topPassages = passages.slice(0, 3);
   const passagesContext = topPassages
-    .map((p, idx) => `PASSAGE ${idx + 1}: ${p.text.split(/\s+/).slice(0, 100).join(' ')}`)
+    .map((p, idx) => `PASSAGE ${idx + 1}:\n${p.text.slice(0, 1200)}`)
     .join('\n\n');
 
   // Cache hit: 0 tokens spent
@@ -467,11 +467,20 @@ export async function classifySentenceVerdict(
     return verdictCache.get(cacheKey)!;
   }
 
-  const prompt = `Classify whether the CLAIM is SUPPORTED, CONTRADICTED, or UNVERIFIABLE based strictly on the PASSAGES.
-- SUPPORTED: Passages directly confirm numbers, dates, and facts.
-- CONTRADICTED: Passages state an opposite direction word, different number, or conflicting fact.
-- UNVERIFIABLE: Passages do not contain sufficient evidence.
+  const prompt = `[Context]
+You are checking whether a claim is supported by passages retrieved from a source document.
+
+[Role]
+You are a factual entailment and verification classifier.
+
+[Instruction]
+Given the CLAIM and the RETRIEVED PASSAGES, determine whether the claim is SUPPORTED, CONTRADICTED, or UNVERIFIABLE.
 Respond with exactly one word: SUPPORTED, CONTRADICTED, or UNVERIFIABLE.
+
+[Rules]
+- SUPPORTED: The passages directly state, affirm, or logically entail the claim (including semantic paraphrases, policy statements, recommendations, numbers, or facts).
+- CONTRADICTED: A passage addresses the same topic but directly contradicts a key fact, number, date, or reverses a direction/negation (e.g. claimed "can predict" when source says "cannot predict", or "fell" vs "rose").
+- UNVERIFIABLE: The passages do not contain enough information to substantiate or refute the claim.
 
 CLAIM: ${sentence}
 
@@ -575,13 +584,24 @@ VERDICT:`;
   try {
     const t0 = performance.now();
     return await callGeminiWithFailover(async (client) => {
-      const response = await client.models.generateContent({
-        model: VERDICT_MODEL,
-        contents: prompt,
-        config: {
-          temperature: 0.0
+      let response;
+      const verdictModels = ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-2.0-flash', VERDICT_MODEL];
+      let lastErr: unknown;
+      for (const m of verdictModels) {
+        try {
+          response = await client.models.generateContent({
+            model: m,
+            contents: prompt,
+            config: {
+              temperature: 0.0
+            }
+          });
+          if (response) break;
+        } catch (err) {
+          lastErr = err;
         }
-      });
+      }
+      if (!response) throw lastErr;
 
       const rawText = response.text || '';
       const rawVerdictValue = rawText.trim().toUpperCase();

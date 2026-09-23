@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
 
     // Check similarity floor (fallback to AMBER immediately without calling LLM if no relevant candidates)
     const bestScore = candidates.length > 0 ? (candidates[0].similarityScore || 0) : 0;
-    if (candidates.length === 0 || bestScore < 0.20) {
+    if (candidates.length === 0 || bestScore < 0.12) {
       return NextResponse.json({
         status: 'AMBER',
         matchedChunkId: candidates[0]?.chunkId || null,
