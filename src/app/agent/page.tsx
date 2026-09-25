@@ -733,7 +733,6 @@ function AgentWorkspace() {
               onSelectSentence={(s) => setSelectedSentence(s)}
               selectedSentenceId={selectedSentence?.sentenceId || null}
               onRetry={handleSubmitQuestion}
-              onSelectSampleQuestion={handleSubmitQuestion}
             />
 
             <QuestionInput

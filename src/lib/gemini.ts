@@ -399,6 +399,78 @@ export interface VerdictResult {
 const verdictCache = new Map<string, VerdictResult>();
 const explanationCache = new Map<string, string>();
 
+const REFINED_DIRECTION_PAIRS = [
+  { pos: /\b(increased|increasing|grew|growth|rose|rising|expanded|expansion)\b/i,
+    neg: /\b(decreased|decreasing|declined|decline|fell|falling|shrank|shrink|dropped|contraction)\b/i },
+  { pos: /(?<!not\s+)\b(can predict|able to predict|capable of predicting)\b/i,
+    neg: /\b(cannot predict|unable to predict|incapable of predicting)\b/i },
+  { pos: /(?<!not\s+)\b(possible to|capable of|able to)\b/i,
+    neg: /\b(impossible to|incapable of|unable to|not possible to)\b/i },
+  { pos: /\b(profitable|made a profit)\b/i,
+    neg: /\b(unprofitable|suffered a loss|incurred losses)\b/i }
+];
+
+function classifyEntailmentFast(claim: string, candidatePassages: CandidatePassage[]): { status: VerificationStatus; reasoning: string } | null {
+  if (candidatePassages.length === 0) return null;
+  const cLower = claim.toLowerCase().replace(/['"“”]/g, '');
+  const fullPassagesText = candidatePassages.map(p => p.text).join(' ').toLowerCase().replace(/['"“”]/g, '');
+
+  // 1. Direction / Polarity Conflict Check (Invariant 1: Catch trend & capability flips in <1ms)
+  for (const pair of REFINED_DIRECTION_PAIRS) {
+    const claimHasPos = pair.pos.test(cLower);
+    const claimHasNeg = pair.neg.test(cLower);
+    const passageHasPos = pair.pos.test(fullPassagesText);
+    const passageHasNeg = pair.neg.test(fullPassagesText);
+
+    if (claimHasPos && !claimHasNeg && passageHasNeg && !passageHasPos) {
+      return { status: 'RED', reasoning: 'Claim asserts positive trend/capability while source states negation or opposite direction.' };
+    }
+    if (claimHasNeg && !claimHasPos && passageHasPos && !passageHasNeg) {
+      return { status: 'RED', reasoning: 'Claim asserts negation while source affirms capability or opposite direction.' };
+    }
+  }
+
+  // 2. Numerical / Percentage Consistency Check
+  const extractNumbers = (t: string) => (t.match(/[$€£]?\d+(?:\.\d+)?%?/g) || []).map(n => n.replace(/[$,€£]/g, ''));
+  const cNums = extractNumbers(claim);
+  const pNums = extractNumbers(fullPassagesText);
+
+  if (cNums.length > 0 && pNums.length > 0) {
+    const conflictingNums = cNums.filter(n => !pNums.includes(n));
+    // If explicit conflicting figures (like percentages or conflicting metric totals) are present
+    if (conflictingNums.length > 0 && (cNums.some(n => n.includes('%')) || cNums.length === pNums.length)) {
+      return { status: 'RED', reasoning: `Figures in claim (${conflictingNums.join(', ')}) contradict figures reported in source passage.` };
+    }
+    if (cNums.every(n => pNums.includes(n))) {
+      const cWords = cLower.match(/\b[a-z]{3,}\b/g) || [];
+      const overlap = cWords.filter(w => fullPassagesText.includes(w)).length / (cWords.length || 1);
+      if (overlap >= 0.40) {
+        return { status: 'GREEN', reasoning: 'All figures and key entities verified against source passage.' };
+      }
+    }
+  }
+
+  // 3. Verbatim Quote / Contiguous Span Match (>= 6 words directly quoted from source)
+  const cTokens = cLower.match(/\b[a-z0-9_]{2,}\b/g) || [];
+  for (let len = 6; len <= 12; len++) {
+    for (let i = 0; i <= cTokens.length - len; i++) {
+      const subphrase = cTokens.slice(i, i + len).join(' ');
+      if (fullPassagesText.includes(subphrase)) {
+        return { status: 'GREEN', reasoning: 'Verbatim phrase match corroborated by source passage.' };
+      }
+    }
+  }
+
+  // 4. High-Confidence Lexical & Entailment Alignment
+  const cWords = cLower.match(/\b[a-z]{3,}\b/g) || [];
+  const overlap = cWords.filter(w => fullPassagesText.includes(w)).length / (cWords.length || 1);
+  if (overlap >= 0.60) {
+    return { status: 'GREEN', reasoning: 'Strong semantic and factual alignment with source passage.' };
+  }
+
+  return null;
+}
+
 export async function classifySentenceVerdict(
   sentence: string,
   passages: CandidatePassage[],
@@ -411,66 +483,6 @@ export async function classifySentenceVerdict(
       reasoning: 'No relevant source passage found.'
     };
   }
-
-const DIRECTION_PAIRS = [
-  { pos: /\b(increased|increase|increasing|grew|growth|rose|rising|higher|highest|improved|improvement|gain|gains)\b/i,
-    neg: /\b(decreased|decrease|decreasing|declined|decline|contraction|fell|falling|lower|lowest|deteriorated|loss|losses)\b/i },
-  { pos: /(?<!not\s+)\b(possible|can|able to|capable of)\b/i,
-    neg: /\b(not possible|impossible|cannot|unable|incapable|can't)\b/i },
-  { pos: /\b(profitable|profit|profits)\b/i,
-    neg: /\b(unprofitable|loss|losses|deficit)\b/i },
-  { pos: /\b(passed|approved|authorized|compliant)\b/i,
-    neg: /\b(failed|rejected|unauthorized|non-compliant)\b/i }
-];
-
-function classifyEntailmentFast(claim: string, candidatePassages: CandidatePassage[]): { status: VerificationStatus; reasoning: string } | null {
-  if (candidatePassages.length === 0) return null;
-  const cLower = claim.toLowerCase();
-  const fullPassagesText = candidatePassages.map(p => p.text).join(' ').toLowerCase();
-
-  // 1. Direction / Polarity Conflict Check (Invariant 1: Catch contradictions in <1ms)
-  for (const pair of DIRECTION_PAIRS) {
-    const claimHasPos = pair.pos.test(cLower);
-    const claimHasNeg = pair.neg.test(cLower);
-    const passageHasPos = pair.pos.test(fullPassagesText);
-    const passageHasNeg = pair.neg.test(fullPassagesText);
-
-    if (claimHasPos && passageHasNeg && !claimHasNeg) {
-      return { status: 'RED', reasoning: 'Claim asserts positive trend/capability while source states negation or opposite direction.' };
-    }
-    if (claimHasNeg && passageHasPos && !passageHasNeg) {
-      return { status: 'RED', reasoning: 'Claim asserts negation/negative trend while source affirms capability or opposite direction.' };
-    }
-  }
-
-  // 2. Numerical / Percentage Consistency Check
-  const extractNumbers = (t: string) => (t.match(/[$€£]?\d+(?:\.\d+)?%?/g) || []).map(n => n.replace(/[$,€£]/g, ''));
-  const cNums = extractNumbers(claim);
-  const pNums = extractNumbers(fullPassagesText);
-
-  if (cNums.length > 0) {
-    const conflictingNums = cNums.filter(n => !pNums.includes(n));
-    if (conflictingNums.length > 0 && pNums.length > 0) {
-      return { status: 'RED', reasoning: `Figures in claim (${conflictingNums.join(', ')}) contradict figures reported in source passage.` };
-    }
-    if (cNums.every(n => pNums.includes(n))) {
-      const cWords = cLower.match(/\b[a-z]{3,}\b/g) || [];
-      const overlap = cWords.filter(w => fullPassagesText.includes(w)).length / (cWords.length || 1);
-      if (overlap >= 0.45) {
-        return { status: 'GREEN', reasoning: 'All figures and key entities verified against source passage.' };
-      }
-    }
-  }
-
-  // 3. High-Confidence Lexical & Entailment Alignment
-  const cWords = cLower.match(/\b[a-z]{3,}\b/g) || [];
-  const overlap = cWords.filter(w => fullPassagesText.includes(w)).length / (cWords.length || 1);
-  if (overlap >= 0.65) {
-    return { status: 'GREEN', reasoning: 'Strong semantic and factual alignment with source passage.' };
-  }
-
-  return null;
-}
 
   const t0 = performance.now();
 
@@ -527,7 +539,7 @@ Given the CLAIM and the RETRIEVED PASSAGES, determine whether the claim is SUPPO
 Respond with exactly one word: SUPPORTED, CONTRADICTED, or UNVERIFIABLE.
 
 [Rules]
-- SUPPORTED: The passages directly state, affirm, or logically entail the claim (including semantic paraphrases, policy statements, recommendations, numbers, or facts).
+- SUPPORTED: The passages directly state, affirm, or logically entail the claim (including semantic paraphrases, policy statements, recommendations, numbers, or facts). If the primary factual proposition or recommendation is affirmed by the passage, classify as SUPPORTED, even if standard introductory framing phrases (e.g. 'While this model offers benefits...') are present.
 - CONTRADICTED: A passage addresses the same topic but directly contradicts a key fact, number, date, or reverses a direction/negation (e.g. claimed "can predict" when source says "cannot predict", or "fell" vs "rose").
 - UNVERIFIABLE: The passages do not contain enough information to substantiate or refute the claim.
 

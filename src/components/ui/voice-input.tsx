@@ -27,17 +27,18 @@ export function VoiceInput({
   const listening = isRecording !== undefined ? isRecording : internalListening
 
   React.useEffect(() => {
-    let intervalId: NodeJS.Timeout
-
-    if (listening) {
-      intervalId = setInterval(() => {
-        _setTime((t) => t + 1)
-      }, 1000)
-    } else {
-      _setTime(0)
+    if (!listening) {
+      return
     }
 
-    return () => clearInterval(intervalId)
+    const intervalId = setInterval(() => {
+      _setTime((t) => t + 1)
+    }, 1000)
+
+    return () => {
+      clearInterval(intervalId)
+      _setTime(0)
+    }
   }, [listening])
 
   const formatTime = (seconds: number) => {
@@ -105,7 +106,7 @@ export function VoiceInput({
                     initial={{ height: 2 }}
                     animate={{
                       height: listening
-                        ? [2, 3 + Math.random() * 10, 3 + Math.random() * 5, 2]
+                        ? [2, 3 + ((i * 7) % 11), 3 + ((i * 5) % 8), 2]
                         : 2,
                     }}
                     transition={{

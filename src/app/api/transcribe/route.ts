@@ -97,7 +97,7 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({ 
-      error: 'Audio transcription timed out across providers.',
+      error: lastError instanceof Error ? lastError.message : 'Audio transcription timed out across providers.',
       transcript: '' 
     }, { status: 200 });
   } catch (err: unknown) {

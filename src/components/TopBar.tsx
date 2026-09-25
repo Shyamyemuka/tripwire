@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { MagnificationDock, DockItemData } from "@/components/ui/magnification-dock";
 
 interface TopBarProps {
@@ -48,6 +49,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   onToggleStressTestMode,
   onOpenAnalytics,
 }) => {
+  const router = useRouter();
   const [isDocPopoverOpen, setIsDocPopoverOpen] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
 
@@ -71,7 +73,7 @@ export const TopBar: React.FC<TopBarProps> = ({
       label: "Landing Page",
       onClick: () => {
         if (onBackToLanding) onBackToLanding();
-        else window.location.href = "/";
+        else router.push("/");
       },
     },
     {

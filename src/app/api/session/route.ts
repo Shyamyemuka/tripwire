@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { chunkDocument, chunkPlainText, chunkMultipleDocuments, InputDocument, PageInput } from '@/lib/chunker';
+import { chunkPlainText, chunkMultipleDocuments, InputDocument, PageInput } from '@/lib/chunker';
 import { extractTextFromPdf } from '@/lib/pdf';
 import { indexDocumentInMoss } from '@/lib/moss';
 import { generateTextEmbedding } from '@/lib/gemini';

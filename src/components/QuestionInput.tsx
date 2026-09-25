@@ -1,18 +1,12 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { ArrowUp, Loader2, Mic, Check, X } from "lucide-react";
+import { ArrowUp, Loader2, X } from "lucide-react";
 import { VoiceInput } from "@/components/ui/voice-input";
 
 interface QuestionInputProps {
   onSubmitQuestion: (question: string) => void;
   isStreaming: boolean;
-}
-
-function formatDuration(seconds: number): string {
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 }
 
 export const QuestionInput: React.FC<QuestionInputProps> = ({
@@ -23,20 +17,14 @@ export const QuestionInput: React.FC<QuestionInputProps> = ({
   const [validationError, setValidationError] = useState<string | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
-  const [recordingSeconds, setRecordingSeconds] = useState(0);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<any>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
-  const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const stopAllResources = useCallback(() => {
-    if (timerIntervalRef.current) {
-      clearInterval(timerIntervalRef.current);
-      timerIntervalRef.current = null;
-    }
     if (recognitionRef.current) {
       try {
         recognitionRef.current.stop();
@@ -65,21 +53,6 @@ export const QuestionInput: React.FC<QuestionInputProps> = ({
     };
   }, [stopAllResources]);
 
-  // Timer effect during recording
-  useEffect(() => {
-    if (isRecording) {
-      timerIntervalRef.current = setInterval(() => {
-        setRecordingSeconds((prev) => prev + 1);
-      }, 1000);
-    }
-    return () => {
-      if (timerIntervalRef.current) {
-        clearInterval(timerIntervalRef.current);
-        timerIntervalRef.current = null;
-      }
-    };
-  }, [isRecording]);
-
   const startVoiceRecording = async () => {
     setValidationError(null);
     audioChunksRef.current = [];
@@ -102,7 +75,6 @@ export const QuestionInput: React.FC<QuestionInputProps> = ({
       };
 
       mediaRecorder.start(250);
-      setRecordingSeconds(0);
       setIsRecording(true);
 
       // 2. Also run browser SpeechRecognition if available for live interim feedback

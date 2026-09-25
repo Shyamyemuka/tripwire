@@ -18,7 +18,6 @@ interface QAThreadProps {
   onSelectSentence: (record: SentenceVerificationRecord) => void;
   selectedSentenceId: string | null;
   onRetry?: (questionText: string) => void;
-  onSelectSampleQuestion?: (questionText: string) => void;
 }
 
 interface SentenceGroup {
@@ -143,7 +142,6 @@ export const QAThread: React.FC<QAThreadProps> = ({
   onSelectSentence,
   selectedSentenceId,
   onRetry,
-  onSelectSampleQuestion,
 }) => {
   if (qaTurns.length === 0) {
     return (

@@ -9,7 +9,7 @@ import {
   type SpringOptions,
   AnimatePresence
 } from 'framer-motion';
-import React, { Children, cloneElement, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Children, cloneElement, useEffect, useRef, useState } from 'react';
 
 export type DockItemData = {
   icon: React.ReactNode;
