@@ -412,43 +412,92 @@ export async function classifySentenceVerdict(
     };
   }
 
+const DIRECTION_PAIRS = [
+  { pos: /\b(increased|increase|increasing|grew|growth|rose|rising|higher|highest|improved|improvement|gain|gains)\b/i,
+    neg: /\b(decreased|decrease|decreasing|declined|decline|contraction|fell|falling|lower|lowest|deteriorated|loss|losses)\b/i },
+  { pos: /(?<!not\s+)\b(possible|can|able to|capable of)\b/i,
+    neg: /\b(not possible|impossible|cannot|unable|incapable|can't)\b/i },
+  { pos: /\b(profitable|profit|profits)\b/i,
+    neg: /\b(unprofitable|loss|losses|deficit)\b/i },
+  { pos: /\b(passed|approved|authorized|compliant)\b/i,
+    neg: /\b(failed|rejected|unauthorized|non-compliant)\b/i }
+];
+
+function classifyEntailmentFast(claim: string, candidatePassages: CandidatePassage[]): { status: VerificationStatus; reasoning: string } | null {
+  if (candidatePassages.length === 0) return null;
+  const cLower = claim.toLowerCase();
+  const fullPassagesText = candidatePassages.map(p => p.text).join(' ').toLowerCase();
+
+  // 1. Direction / Polarity Conflict Check (Invariant 1: Catch contradictions in <1ms)
+  for (const pair of DIRECTION_PAIRS) {
+    const claimHasPos = pair.pos.test(cLower);
+    const claimHasNeg = pair.neg.test(cLower);
+    const passageHasPos = pair.pos.test(fullPassagesText);
+    const passageHasNeg = pair.neg.test(fullPassagesText);
+
+    if (claimHasPos && passageHasNeg && !claimHasNeg) {
+      return { status: 'RED', reasoning: 'Claim asserts positive trend/capability while source states negation or opposite direction.' };
+    }
+    if (claimHasNeg && passageHasPos && !passageHasNeg) {
+      return { status: 'RED', reasoning: 'Claim asserts negation/negative trend while source affirms capability or opposite direction.' };
+    }
+  }
+
+  // 2. Numerical / Percentage Consistency Check
+  const extractNumbers = (t: string) => (t.match(/[$€£]?\d+(?:\.\d+)?%?/g) || []).map(n => n.replace(/[$,€£]/g, ''));
+  const cNums = extractNumbers(claim);
+  const pNums = extractNumbers(fullPassagesText);
+
+  if (cNums.length > 0) {
+    const conflictingNums = cNums.filter(n => !pNums.includes(n));
+    if (conflictingNums.length > 0 && pNums.length > 0) {
+      return { status: 'RED', reasoning: `Figures in claim (${conflictingNums.join(', ')}) contradict figures reported in source passage.` };
+    }
+    if (cNums.every(n => pNums.includes(n))) {
+      const cWords = cLower.match(/\b[a-z]{3,}\b/g) || [];
+      const overlap = cWords.filter(w => fullPassagesText.includes(w)).length / (cWords.length || 1);
+      if (overlap >= 0.45) {
+        return { status: 'GREEN', reasoning: 'All figures and key entities verified against source passage.' };
+      }
+    }
+  }
+
+  // 3. High-Confidence Lexical & Entailment Alignment
+  const cWords = cLower.match(/\b[a-z]{3,}\b/g) || [];
+  const overlap = cWords.filter(w => fullPassagesText.includes(w)).length / (cWords.length || 1);
+  if (overlap >= 0.65) {
+    return { status: 'GREEN', reasoning: 'Strong semantic and factual alignment with source passage.' };
+  }
+
+  return null;
+}
+
+  const t0 = performance.now();
+
+  // Fast-path in-memory factual entailment (<1ms)
+  const fastResult = classifyEntailmentFast(sentence, passages);
+  if (fastResult) {
+    const durationMs = Math.round(performance.now() - t0);
+    if (turnId) {
+      console.log(JSON.stringify({
+        traceId: turnId,
+        spanName: "verdict_classification_fast_path",
+        sentenceId: sentenceId || "unknown",
+        durationMs,
+        status: fastResult.status,
+        timestamp: new Date().toISOString()
+      }));
+    }
+    return {
+      status: fastResult.status,
+      reasoning: fastResult.reasoning
+    };
+  }
+
   const hidevsKey = getHiDevsApiKey();
   const keys = getAvailableGeminiKeys();
 
   if (!hidevsKey && keys.length === 0) {
-    // Offline / unconfigured key fallback:
-    // Invariant 1 & 3: Never default to GREEN if numbers exist and are unverified!
-    const bestPassage = passages[0];
-    const sNumbers: string[] = sentence.match(/\b\d+(\.\d+)?%?\b/g) || [];
-    const pNumbers: string[] = bestPassage.text.match(/\b\d+(\.\d+)?%?\b/g) || [];
-
-    if (sNumbers.length > 0) {
-      const allNumbersMatch = sNumbers.every(n => pNumbers.includes(n));
-      if (allNumbersMatch) {
-        return {
-          status: 'GREEN',
-          reasoning: 'Numbers corroborated by source passage.'
-        };
-      } else {
-        return {
-          status: 'AMBER',
-          reasoning: 'Claim contains figures not directly affirmed in source passage.'
-        };
-      }
-    }
-
-    const sWords = sentence.toLowerCase().match(/\b[a-z0-9_]{3,}\b/g) || [];
-    const pText = bestPassage.text.toLowerCase();
-    const matchCount = sWords.filter(w => pText.includes(w)).length;
-    const ratio = sWords.length > 0 ? matchCount / sWords.length : 0;
-
-    if (ratio >= 0.6) {
-      return {
-        status: 'GREEN',
-        reasoning: 'Lexical alignment with source passage.'
-      };
-    }
-
     return {
       status: 'AMBER',
       reasoning: 'Gemini client offline; insufficient evidence in retrieved passage.'

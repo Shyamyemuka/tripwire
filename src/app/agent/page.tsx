@@ -319,10 +319,10 @@ function AgentWorkspace() {
 
       const detector = new SentenceDetector();
 
-      // Sequential verification (concurrency = 1) prevents gateway rate-limit spikes (429) across token windows
+      // Parallelized verification (concurrency = 4) ensures MOSS sub-10ms queries resolve concurrently
       const verificationQueue: Array<{ sId: string; sText: string }> = [];
       let activeVerifications = 0;
-      const MAX_CONCURRENT_VERIFICATIONS = 1;
+      const MAX_CONCURRENT_VERIFICATIONS = 4;
 
       // Invariant 2: Each sentence issues its own fresh independent query
       const verifySentence = async (sId: string, sText: string, retryCount = 0): Promise<void> => {

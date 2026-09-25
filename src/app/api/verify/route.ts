@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
     const tVerdictStart = performance.now();
     const verdictResult = await classifySentenceVerdict(sentence, candidates, turnId, sentenceId);
     const tVerdictEnd = performance.now();
-    const verdictLatencyMs = Math.max(1, Number((tVerdictEnd - tVerdictStart).toFixed(2)));
+    const verdictLatencyMs = Math.max(0.1, Number((tVerdictEnd - tVerdictStart).toFixed(2)));
 
     const bestCandidate = candidates[0];
 
