@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { queryMossRetrieval } from '@/lib/moss';
-import { CandidatePassage } from '@/lib/types';
+import { queryMossRetrieval, getSessionChunks, registerSessionChunks } from '@/lib/moss';
+import { CandidatePassage, ChunkRecord } from '@/lib/types';
 
 export async function POST(req: NextRequest) {
   try {
-    const { sessionId, sentenceText } = await req.json();
+    const { sessionId, sentenceText, chunks: clientChunks, topK = 3 } = await req.json();
 
     if (!sessionId || !sentenceText || typeof sentenceText !== 'string' || !sentenceText.trim()) {
       return NextResponse.json(
@@ -12,6 +12,16 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+
+    // Rehydrate session chunks if provided by client
+    if (clientChunks && Array.isArray(clientChunks) && clientChunks.length > 0 && getSessionChunks(sessionId).length === 0) {
+      registerSessionChunks(sessionId, clientChunks as ChunkRecord[]);
+    }
+
+    // Validate and clamp topK
+    const validTopK = typeof topK === 'number' && Number.isFinite(topK)
+      ? Math.min(Math.max(1, Math.floor(topK)), 10)
+      : 3;
 
     // Extract core topic terms from sentenceText
     const coreTopic = sentenceText.replace(/[^\w\s]/gi, '').slice(0, 100);
@@ -24,8 +34,8 @@ export async function POST(req: NextRequest) {
 
     // Query Moss in parallel with contrasting semantic probes
     const [res1, res2] = await Promise.all([
-      queryMossRetrieval(sessionId, probe1, 3),
-      queryMossRetrieval(sessionId, probe2, 3),
+      queryMossRetrieval(sessionId, probe1, validTopK),
+      queryMossRetrieval(sessionId, probe2, validTopK),
     ]);
 
     const t1 = performance.now();
