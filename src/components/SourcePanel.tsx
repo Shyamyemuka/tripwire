@@ -12,18 +12,69 @@ import {
   Copy,
   Check,
   Zap,
+  Search,
+  Loader2,
+  ShieldAlert,
 } from "lucide-react";
+import { CandidatePassage } from "@/lib/types";
 
 interface SourcePanelProps {
   sentenceRecord: SentenceVerificationRecord | null;
+  sessionId?: string | null;
   onClose: () => void;
 }
 
 export const SourcePanel: React.FC<SourcePanelProps> = ({
   sentenceRecord,
+  sessionId,
   onClose,
 }) => {
   const [copiedSnippet, setCopiedSnippet] = useState<string | null>(null);
+  const [counterCandidates, setCounterCandidates] = useState<CandidatePassage[]>([]);
+  const [counterLatencyMs, setCounterLatencyMs] = useState<number | null>(null);
+  const [isScanningCounter, setIsScanningCounter] = useState(false);
+  const [hasScanned, setHasScanned] = useState(false);
+
+  const [activeSentenceId, setActiveSentenceId] = useState<string | null>(
+    sentenceRecord?.sentenceId || null
+  );
+
+  if (sentenceRecord && sentenceRecord.sentenceId !== activeSentenceId) {
+    setActiveSentenceId(sentenceRecord.sentenceId);
+    setCounterCandidates([]);
+    setCounterLatencyMs(null);
+    setIsScanningCounter(false);
+    setHasScanned(false);
+  }
+
+  const handleScanCounterEvidence = async () => {
+    if (!sentenceRecord || !sessionId || isScanningCounter) return;
+
+    setIsScanningCounter(true);
+    try {
+      const res = await fetch("/api/counter-evidence", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId,
+          sentenceText: sentenceRecord.text,
+        }),
+      });
+
+      if (!res.ok) throw new Error("Counter scan failed");
+
+      const data = await res.json();
+      if (data.counterCandidates) {
+        setCounterCandidates(data.counterCandidates);
+        setCounterLatencyMs(data.timeTakenInMs);
+      }
+    } catch (err) {
+      console.warn("Counter evidence scan error:", err);
+    } finally {
+      setIsScanningCounter(false);
+      setHasScanned(true);
+    }
+  };
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -232,6 +283,84 @@ export const SourcePanel: React.FC<SourcePanelProps> = ({
               </div>
             )}
           </div>
+
+          {/* Feature 2: Counter-Evidence & Caveats Scan */}
+          {sessionId && (
+            <div className="pt-2 border-t border-white/10 space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
+                  Cross-Examine Document
+                </label>
+
+                {!hasScanned && (
+                  <button
+                    type="button"
+                    onClick={handleScanCounterEvidence}
+                    disabled={isScanningCounter}
+                    className="px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 font-sans text-xs font-medium flex items-center gap-1.5 transition-all shadow-sm"
+                  >
+                    {isScanningCounter ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />
+                        <span>Scanning Probes...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Search className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Scan Counter-Evidence &amp; Caveats</span>
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
+
+              {/* Scanned Counter-Evidence Candidates */}
+              {hasScanned && (
+                <div className="space-y-3 animate-blur-fade-up">
+                  <div className="flex items-center justify-between text-[10px] font-mono text-neutral-400 px-1">
+                    <span className="text-amber-300 font-medium flex items-center gap-1">
+                      <ShieldAlert className="w-3 h-3 text-amber-400" />
+                      Document Caveats &amp; Contrasting Sections
+                    </span>
+                    {counterLatencyMs !== null && (
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-semibold flex items-center gap-1">
+                        <Zap className="w-2.5 h-2.5 fill-current" />
+                        {counterLatencyMs < 1 ? "<1.0" : counterLatencyMs.toFixed(1)}ms Moss
+                      </span>
+                    )}
+                  </div>
+
+                  {counterCandidates.length > 0 ? (
+                    <div className="space-y-2.5">
+                      {counterCandidates.map((cand, idx) => (
+                        <div
+                          key={cand.chunkId || idx}
+                          className="p-3.5 rounded-xl border border-amber-500/20 bg-amber-950/10 text-neutral-200 text-xs space-y-1.5"
+                        >
+                          <div className="flex items-center justify-between text-[10px] font-mono text-neutral-400 border-b border-white/5 pb-1">
+                            <span className="truncate">
+                              {cand.documentName ? `${cand.documentName} · ` : ""}Page {cand.pageNumber}
+                            </span>
+                            <span className="text-amber-400 font-mono">
+                              {(cand.similarityScore * 100).toFixed(1)}% match
+                            </span>
+                          </div>
+                          <p className="leading-relaxed text-neutral-300 font-mono text-[11px]">
+                            {cand.text}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-3 rounded-xl border border-dashed border-white/10 text-center text-xs text-neutral-500 font-mono">
+                      No contrasting caveats or policy exceptions detected across document.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Notice: Similarity != Truth */}
           <div className="p-3 rounded-lg bg-white/[0.02] border border-white/[0.06] text-[10px] text-neutral-400 leading-relaxed">
