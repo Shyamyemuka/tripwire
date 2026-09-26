@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { SentenceVerificationRecord } from "@/lib/types";
 import {
   X,
@@ -16,17 +16,19 @@ import {
   Loader2,
   ShieldAlert,
 } from "lucide-react";
-import { CandidatePassage } from "@/lib/types";
+import { CandidatePassage, ChunkRecord } from "@/lib/types";
 
 interface SourcePanelProps {
   sentenceRecord: SentenceVerificationRecord | null;
   sessionId?: string | null;
+  chunks?: ChunkRecord[];
   onClose: () => void;
 }
 
 export const SourcePanel: React.FC<SourcePanelProps> = ({
   sentenceRecord,
   sessionId,
+  chunks,
   onClose,
 }) => {
   const [copiedSnippet, setCopiedSnippet] = useState<string | null>(null);
@@ -34,45 +36,84 @@ export const SourcePanel: React.FC<SourcePanelProps> = ({
   const [counterLatencyMs, setCounterLatencyMs] = useState<number | null>(null);
   const [isScanningCounter, setIsScanningCounter] = useState(false);
   const [hasScanned, setHasScanned] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
 
-  const [activeSentenceId, setActiveSentenceId] = useState<string | null>(
-    sentenceRecord?.sentenceId || null
-  );
+  const counterAbortRef = useRef<AbortController | null>(null);
+  const sentenceRecordRef = useRef<SentenceVerificationRecord | null>(sentenceRecord);
 
-  if (sentenceRecord && sentenceRecord.sentenceId !== activeSentenceId) {
-    setActiveSentenceId(sentenceRecord.sentenceId);
-    setCounterCandidates([]);
-    setCounterLatencyMs(null);
-    setIsScanningCounter(false);
-    setHasScanned(false);
-  }
+  // Cleanup in-flight scan on unmount
+  useEffect(() => {
+    return () => {
+      if (counterAbortRef.current) {
+        counterAbortRef.current.abort();
+        counterAbortRef.current = null;
+      }
+    };
+  }, []);
 
   const handleScanCounterEvidence = async () => {
     if (!sentenceRecord || !sessionId || isScanningCounter) return;
 
+    if (counterAbortRef.current) {
+      counterAbortRef.current.abort();
+    }
+    const controller = new AbortController();
+    counterAbortRef.current = controller;
+    const targetSentenceId = sentenceRecord.sentenceId;
+
     setIsScanningCounter(true);
+    setScanError(null);
+
     try {
       const res = await fetch("/api/counter-evidence", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({
           sessionId,
           sentenceText: sentenceRecord.text,
+          chunks,
         }),
       });
 
-      if (!res.ok) throw new Error("Counter scan failed");
+      if (!res.ok) {
+        const errData = await res.json().catch(() => null);
+        throw new Error(errData?.error || "Counter-evidence scan failed");
+      }
 
       const data = await res.json();
+      // Ignore response if the user has switched sentences or aborted
+      if (
+        counterAbortRef.current !== controller ||
+        sentenceRecordRef.current?.sentenceId !== targetSentenceId
+      ) {
+        return;
+      }
+
       if (data.counterCandidates) {
         setCounterCandidates(data.counterCandidates);
         setCounterLatencyMs(data.timeTakenInMs);
+        setHasScanned(true);
       }
-    } catch (err) {
+    } catch (err: unknown) {
+      if (err instanceof Error && err.name === "AbortError") {
+        return; // Normal cancellation, do not report error
+      }
+      if (
+        counterAbortRef.current !== controller ||
+        sentenceRecordRef.current?.sentenceId !== targetSentenceId
+      ) {
+        return;
+      }
       console.warn("Counter evidence scan error:", err);
+      setScanError(err instanceof Error ? err.message : "Counter-evidence scan failed.");
     } finally {
-      setIsScanningCounter(false);
-      setHasScanned(true);
+      if (
+        counterAbortRef.current === controller &&
+        sentenceRecordRef.current?.sentenceId === targetSentenceId
+      ) {
+        setIsScanningCounter(false);
+      }
     }
   };
 
@@ -293,7 +334,7 @@ export const SourcePanel: React.FC<SourcePanelProps> = ({
                   Cross-Examine Document
                 </label>
 
-                {!hasScanned && (
+                {!hasScanned && !scanError && (
                   <button
                     type="button"
                     onClick={handleScanCounterEvidence}
@@ -315,8 +356,23 @@ export const SourcePanel: React.FC<SourcePanelProps> = ({
                 )}
               </div>
 
+              {/* Error State */}
+              {scanError && (
+                <div className="p-3 rounded-xl border border-rose-500/30 bg-rose-950/20 text-xs text-rose-300 flex items-center justify-between gap-2">
+                  <span className="truncate">{scanError}</span>
+                  <button
+                    type="button"
+                    onClick={handleScanCounterEvidence}
+                    disabled={isScanningCounter}
+                    className="px-2.5 py-1 rounded-md bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 font-mono text-[10px] shrink-0 transition-colors"
+                  >
+                    {isScanningCounter ? "Retrying..." : "Retry"}
+                  </button>
+                </div>
+              )}
+
               {/* Scanned Counter-Evidence Candidates */}
-              {hasScanned && (
+              {hasScanned && !scanError && (
                 <div className="space-y-3 animate-blur-fade-up">
                   <div className="flex items-center justify-between text-[10px] font-mono text-neutral-400 px-1">
                     <span className="text-amber-300 font-medium flex items-center gap-1">

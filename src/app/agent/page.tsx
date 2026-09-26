@@ -761,8 +761,10 @@ function AgentWorkspace() {
           {/* Slide-over Source Panel */}
           {selectedSentence && (
             <SourcePanel
+              key={selectedSentence.sentenceId}
               sentenceRecord={selectedSentence}
               sessionId={sessionId}
+              chunks={chunks}
               onClose={() => setSelectedSentence(null)}
             />
           )}
@@ -777,11 +779,12 @@ function AgentWorkspace() {
           />
 
           {/* Spotlight Search Modal */}
-          {sessionId && (
+          {isSpotlightOpen && sessionId && (
             <SpotlightSearch
               isOpen={isSpotlightOpen}
               onClose={() => setIsSpotlightOpen(false)}
               sessionId={sessionId}
+              chunks={chunks}
               onSelectForQuestion={(promptText) => {
                 handleSubmitQuestion(promptText);
               }}

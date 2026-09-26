@@ -437,8 +437,8 @@ function classifyEntailmentFast(claim: string, candidatePassages: CandidatePassa
 
   if (cNums.length > 0 && pNums.length > 0) {
     const conflictingNums = cNums.filter(n => !pNums.includes(n));
-    // If explicit conflicting figures (like percentages or conflicting metric totals) are present
-    if (conflictingNums.length > 0 && (cNums.some(n => n.includes('%')) || cNums.length === pNums.length)) {
+    // If any figures in claim contradict or are absent from source figures, flag RED
+    if (conflictingNums.length > 0) {
       return { status: 'RED', reasoning: `Figures in claim (${conflictingNums.join(', ')}) contradict figures reported in source passage.` };
     }
     if (cNums.every(n => pNums.includes(n))) {
@@ -461,11 +461,13 @@ function classifyEntailmentFast(claim: string, candidatePassages: CandidatePassa
     }
   }
 
-  // 4. High-Confidence Lexical & Entailment Alignment
-  const cWords = cLower.match(/\b[a-z]{3,}\b/g) || [];
-  const overlap = cWords.filter(w => fullPassagesText.includes(w)).length / (cWords.length || 1);
-  if (overlap >= 0.60) {
-    return { status: 'GREEN', reasoning: 'Strong semantic and factual alignment with source passage.' };
+  // 4. High-Confidence Lexical & Entailment Alignment (Only if no conflicting numbers)
+  if (cNums.length === 0 || cNums.every(n => pNums.includes(n))) {
+    const cWords = cLower.match(/\b[a-z]{3,}\b/g) || [];
+    const overlap = cWords.filter(w => fullPassagesText.includes(w)).length / (cWords.length || 1);
+    if (overlap >= 0.60) {
+      return { status: 'GREEN', reasoning: 'Strong semantic and factual alignment with source passage.' };
+    }
   }
 
   return null;

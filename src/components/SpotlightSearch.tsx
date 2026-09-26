@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { CandidatePassage } from "@/lib/types";
+import { CandidatePassage, ChunkRecord } from "@/lib/types";
 import {
   Search,
   Zap,
@@ -17,6 +17,7 @@ interface SpotlightSearchProps {
   isOpen: boolean;
   onClose: () => void;
   sessionId: string;
+  chunks?: ChunkRecord[];
   onSelectForQuestion: (questionPrompt: string) => void;
 }
 
@@ -24,6 +25,7 @@ export const SpotlightSearch: React.FC<SpotlightSearchProps> = ({
   isOpen,
   onClose,
   sessionId,
+  chunks,
   onSelectForQuestion,
 }) => {
   const [query, setQuery] = useState("");
@@ -33,33 +35,62 @@ export const SpotlightSearch: React.FC<SpotlightSearchProps> = ({
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const inputRef = useRef<HTMLInputElement>(null);
+  const modalRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
 
-  const [prevIsOpen, setPrevIsOpen] = useState(isOpen);
-
-  if (isOpen !== prevIsOpen) {
-    setPrevIsOpen(isOpen);
-    if (!isOpen) {
-      setQuery("");
-      setResults([]);
-      setLatencyMs(null);
-    }
-  }
-
-  // Focus search input when modal opens
+  // Focus management: store previous active element, trap focus, reset on unmount
   useEffect(() => {
-    if (isOpen) {
-      setTimeout(() => inputRef.current?.focus(), 50);
-    }
-  }, [isOpen]);
+    previousFocusRef.current = document.activeElement as HTMLElement;
+    const timer = setTimeout(() => inputRef.current?.focus(), 50);
 
-  // Handle Escape key to close
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && isOpen) {
-        onClose();
+    return () => {
+      clearTimeout(timer);
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+      if (previousFocusRef.current) {
+        previousFocusRef.current.focus();
+        previousFocusRef.current = null;
       }
     };
+  }, []);
+
+  // Handle Escape key to close and Tab key to trap focus
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+        return;
+      }
+
+      if (e.key === "Tab" && modalRef.current) {
+        const focusable = modalRef.current.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        );
+        if (focusable.length === 0) return;
+
+        const firstElement = focusable[0];
+        const lastElement = focusable[focusable.length - 1];
+
+        if (e.shiftKey) {
+          if (document.activeElement === firstElement) {
+            e.preventDefault();
+            lastElement.focus();
+          }
+        } else {
+          if (document.activeElement === lastElement) {
+            e.preventDefault();
+            firstElement.focus();
+          }
+        }
+      }
+    };
+
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isOpen, onClose]);
@@ -68,6 +99,10 @@ export const SpotlightSearch: React.FC<SpotlightSearchProps> = ({
   const performSearch = useCallback(
     async (searchQuery: string) => {
       if (!searchQuery.trim()) {
+        if (abortControllerRef.current) {
+          abortControllerRef.current.abort();
+          abortControllerRef.current = null;
+        }
         setResults([]);
         setLatencyMs(null);
         setIsLoading(false);
@@ -92,13 +127,14 @@ export const SpotlightSearch: React.FC<SpotlightSearchProps> = ({
             sessionId,
             query: searchQuery,
             topK: 5,
+            chunks,
           }),
         });
 
         if (!res.ok) throw new Error("Search failed");
 
         const data = await res.json();
-        if (data.candidates) {
+        if (abortControllerRef.current === controller && data.candidates) {
           setResults(data.candidates);
           setLatencyMs(data.timeTakenInMs);
         }
@@ -113,21 +149,34 @@ export const SpotlightSearch: React.FC<SpotlightSearchProps> = ({
         }
       }
     },
-    [sessionId]
+    [sessionId, chunks]
   );
 
+  // Debounce search when query is entered
   useEffect(() => {
+    const trimmed = query.trim();
+    if (!trimmed) {
+      return;
+    }
+
     const timer = setTimeout(() => {
-      if (query.trim()) {
-        performSearch(query);
-      } else {
-        setResults([]);
-        setLatencyMs(null);
-      }
+      performSearch(trimmed);
     }, 80);
 
     return () => clearTimeout(timer);
   }, [query, performSearch]);
+
+  const handleClearQuery = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setQuery("");
+    setResults([]);
+    setLatencyMs(null);
+    setIsLoading(false);
+    inputRef.current?.focus();
+  };
 
   if (!isOpen) return null;
 
@@ -146,7 +195,12 @@ export const SpotlightSearch: React.FC<SpotlightSearchProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-16 sm:pt-24 px-4">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="spotlight-dialog-title"
+      className="fixed inset-0 z-50 flex items-start justify-center pt-16 sm:pt-24 px-4"
+    >
       {/* Backdrop */}
       <div
         onClick={onClose}
@@ -154,24 +208,50 @@ export const SpotlightSearch: React.FC<SpotlightSearchProps> = ({
       />
 
       {/* Spotlight Palette Container */}
-      <div className="relative z-10 w-full max-w-2xl glass-panel border border-white/20 shadow-2xl rounded-2xl flex flex-col overflow-hidden backdrop-blur-2xl bg-black/90 animate-blur-fade-up">
+      <div
+        ref={modalRef}
+        className="relative z-10 w-full max-w-2xl glass-panel border border-white/20 shadow-2xl rounded-2xl flex flex-col overflow-hidden backdrop-blur-2xl bg-black/90 animate-blur-fade-up"
+      >
+        <h2 id="spotlight-dialog-title" className="sr-only">
+          Spotlight Document Search
+        </h2>
+
         {/* Search Bar Input */}
         <div className="flex items-center gap-3 px-4 py-3.5 border-b border-white/15 bg-white/[0.03]">
-          <Search className="w-5 h-5 text-neutral-400 shrink-0" />
+          <Search className="w-5 h-5 text-neutral-400 shrink-0" aria-hidden="true" />
           <input
             ref={inputRef}
             type="text"
+            role="combobox"
+            aria-expanded={results.length > 0}
+            aria-controls="spotlight-results"
+            aria-autocomplete="list"
+            aria-label="Search document with Moss sub-10ms retrieval"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => {
+              const val = e.target.value;
+              setQuery(val);
+              if (!val.trim()) {
+                if (abortControllerRef.current) {
+                  abortControllerRef.current.abort();
+                  abortControllerRef.current = null;
+                }
+                setResults([]);
+                setLatencyMs(null);
+                setIsLoading(false);
+              }
+            }}
             placeholder="Spotlight Search: type keywords or concepts across document..."
             className="w-full bg-transparent text-sm sm:text-base text-white placeholder-neutral-500 focus:outline-none"
           />
           {isLoading && (
-            <Loader2 className="w-4 h-4 text-emerald-400 animate-spin shrink-0" />
+            <Loader2 className="w-4 h-4 text-emerald-400 animate-spin shrink-0" aria-label="Loading search results" />
           )}
           {query && !isLoading && (
             <button
-              onClick={() => setQuery("")}
+              type="button"
+              onClick={handleClearQuery}
+              aria-label="Clear search input"
               className="p-1 text-neutral-400 hover:text-white rounded-md transition-colors"
             >
               <X className="w-4 h-4" />
@@ -180,7 +260,7 @@ export const SpotlightSearch: React.FC<SpotlightSearchProps> = ({
         </div>
 
         {/* Results / Empty state Area */}
-        <div className="max-h-[60vh] overflow-y-auto p-4 space-y-3">
+        <div id="spotlight-results" role="listbox" className="max-h-[60vh] overflow-y-auto p-4 space-y-3">
           {/* Header Bar with Moss Latency Badge */}
           {results.length > 0 && latencyMs !== null && (
             <div className="flex items-center justify-between text-[11px] font-mono text-neutral-400 px-1 pb-1 border-b border-white/10">
@@ -202,8 +282,17 @@ export const SpotlightSearch: React.FC<SpotlightSearchProps> = ({
             return (
               <div
                 key={cardId}
+                role="option"
+                tabIndex={0}
+                aria-selected={false}
                 onClick={() => handleAskQuestion(item.text)}
-                className="group p-4 rounded-xl border border-white/10 bg-white/[0.02] hover:bg-white/[0.06] hover:border-white/20 transition-all cursor-pointer space-y-2.5"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    handleAskQuestion(item.text);
+                  }
+                }}
+                className="group p-4 rounded-xl border border-white/10 bg-white/[0.02] hover:bg-white/[0.06] hover:border-white/20 transition-all cursor-pointer space-y-2.5 focus:outline-none focus:ring-1 focus:ring-emerald-500/50"
               >
                 <div className="flex items-center justify-between text-[11px] font-mono text-neutral-400">
                   <div className="flex items-center gap-2 truncate">
