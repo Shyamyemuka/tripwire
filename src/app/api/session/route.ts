@@ -214,14 +214,58 @@ export async function POST(req: NextRequest) {
     // Index into Moss
     await indexDocumentInMoss(sessionId, enrichedChunks);
 
+    // Feature 3: Dynamic Document Topic Scan using rapid Moss semantic probes
+    const { queryMossRetrieval } = await import('@/lib/moss');
+    const topicProbes = [
+      'key requirements policies governance overview executive summary',
+      'critical security compliance risks limitations obligations',
+      'technical standards encryption operational guidelines procedures'
+    ];
+
+    const suggestedTopics: string[] = [];
+    try {
+      const probeResults = await Promise.all(
+        topicProbes.map(probe => queryMossRetrieval(sessionId, probe, 1))
+      );
+
+      for (const res of probeResults) {
+        if (res.candidates && res.candidates.length > 0) {
+          const firstSentence = res.candidates[0].text
+            .split(/[.!?\n]/)
+            .map(s => s.trim())
+            .find(s => s.length > 15 && s.length < 90);
+
+          if (firstSentence && !suggestedTopics.includes(firstSentence)) {
+            suggestedTopics.push(firstSentence);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to generate dynamic topic suggestions:', e);
+    }
+
+    // Fallback if probes produce no short sentences
+    if (suggestedTopics.length === 0 && enrichedChunks.length > 0) {
+      suggestedTopics.push(
+        'What are the core requirements outlined in this document?',
+        'What key security or operational guidelines are specified?',
+        'Are there any notable exceptions, limitations, or risk disclosures?'
+      );
+    }
+
+    const finalMeta = {
+      ...meta,
+      suggestedTopics
+    };
+
     // Store session state in Redis (Externalize session state)
     const { createRedisSession } = await import('@/lib/redis');
-    await createRedisSession(sessionId, meta, enrichedChunks);
+    await createRedisSession(sessionId, finalMeta, enrichedChunks);
 
     return NextResponse.json({
       success: true,
       sessionId,
-      documentMeta: meta,
+      documentMeta: finalMeta,
       chunks: enrichedChunks,
       documentFullText: fullText
     });

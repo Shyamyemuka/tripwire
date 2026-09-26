@@ -9,6 +9,7 @@ import { QuestionInput } from "@/components/QuestionInput";
 import { SourcePanel } from "@/components/SourcePanel";
 import { ChatHistorySidebar } from "@/components/ChatHistorySidebar";
 import { AnalyticsModal } from "@/components/AnalyticsModal";
+import { SpotlightSearch } from "@/components/SpotlightSearch";
 import { BackgroundPixelStars } from "@/components/ui/background-pixel-stars";
 import { SentenceDetector } from "@/lib/sentence-boundary";
 import {
@@ -40,6 +41,7 @@ function AgentWorkspace() {
   const [isHistoryOpen, setIsHistoryOpen] = useState<boolean>(false);
   const [isStressTestMode, setIsStressTestMode] = useState<boolean>(false);
   const [isAnalyticsOpen, setIsAnalyticsOpen] = useState<boolean>(false);
+  const [isSpotlightOpen, setIsSpotlightOpen] = useState<boolean>(false);
   const [activeInterventionNotice, setActiveInterventionNotice] = useState<string | null>(null);
   const interventionTimerRef = useRef<NodeJS.Timeout | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -75,6 +77,18 @@ function AgentWorkspace() {
     } catch {
       // Audio context permission or browser policy ignore
     }
+  }, []);
+
+  // Global Cmd+K / Ctrl+K hotkey for Spotlight Search
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setIsSpotlightOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
   useEffect(() => {
@@ -716,6 +730,7 @@ function AgentWorkspace() {
             isStressTestMode={isStressTestMode}
             onToggleStressTestMode={() => setIsStressTestMode(prev => !prev)}
             onOpenAnalytics={() => setIsAnalyticsOpen(true)}
+            onOpenSpotlight={() => setIsSpotlightOpen(true)}
           />
 
           {/* Feature 4: Floating Voice Intervention Alert Banner */}
@@ -733,6 +748,8 @@ function AgentWorkspace() {
               onSelectSentence={(s) => setSelectedSentence(s)}
               selectedSentenceId={selectedSentence?.sentenceId || null}
               onRetry={handleSubmitQuestion}
+              suggestedTopics={documentMeta.suggestedTopics}
+              onSelectTopicChip={(topic) => handleSubmitQuestion(topic)}
             />
 
             <QuestionInput
@@ -745,6 +762,7 @@ function AgentWorkspace() {
           {selectedSentence && (
             <SourcePanel
               sentenceRecord={selectedSentence}
+              sessionId={sessionId}
               onClose={() => setSelectedSentence(null)}
             />
           )}
@@ -757,6 +775,18 @@ function AgentWorkspace() {
             totalClaimsVerified={totalClaimsVerified}
             avgRetrievalLatencyMs={avgRetrievalLatencyMs}
           />
+
+          {/* Spotlight Search Modal */}
+          {sessionId && (
+            <SpotlightSearch
+              isOpen={isSpotlightOpen}
+              onClose={() => setIsSpotlightOpen(false)}
+              sessionId={sessionId}
+              onSelectForQuestion={(promptText) => {
+                handleSubmitQuestion(promptText);
+              }}
+            />
+          )}
         </div>
       )}
     </div>

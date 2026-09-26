@@ -61,6 +61,7 @@ export interface DocumentMeta {
   truncated: boolean;
   truncatedPageRange?: string;
   documents?: DocumentItem[];
+  suggestedTopics?: string[];
 }
 
 export interface SessionState {

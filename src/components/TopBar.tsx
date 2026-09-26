@@ -12,6 +12,7 @@ import {
   Download,
   BarChart3,
   Home,
+  Search,
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
@@ -32,6 +33,7 @@ interface TopBarProps {
   isStressTestMode?: boolean;
   onToggleStressTestMode?: () => void;
   onOpenAnalytics?: () => void;
+  onOpenSpotlight?: () => void;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
@@ -48,6 +50,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   isStressTestMode,
   onToggleStressTestMode,
   onOpenAnalytics,
+  onOpenSpotlight,
 }) => {
   const router = useRouter();
   const [isDocPopoverOpen, setIsDocPopoverOpen] = useState(false);
@@ -81,6 +84,15 @@ export const TopBar: React.FC<TopBarProps> = ({
       label: "New Chat",
       onClick: onResetDocument,
     },
+    ...(onOpenSpotlight
+      ? [
+          {
+            icon: <Search className="w-4.5 h-4.5 text-emerald-400" />,
+            label: "Search Document (Cmd+K)",
+            onClick: onOpenSpotlight,
+          },
+        ]
+      : []),
     ...(onOpenHistory
       ? [
           {
