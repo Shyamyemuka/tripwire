@@ -399,9 +399,10 @@ export interface VerdictResult {
 const verdictCache = new Map<string, VerdictResult>();
 const explanationCache = new Map<string, string>();
 
-const REFINED_DIRECTION_PAIRS = [
-  { pos: /\b(increased|increasing|grew|growth|rose|rising|expanded|expansion)\b/i,
-    neg: /\b(decreased|decreasing|declined|decline|fell|falling|shrank|shrink|dropped|contraction)\b/i },
+const DIRECTION_POS_REGEX = /\b(increase|increases|increased|increasing|grow|grows|grew|grown|growth|rose|rise|rises|rising|expand|expands|expanded|expanding|expansion|gain|gains|gained|gaining|add|adds|added|adding|additions|surged|surging|surge|jumped|jumping|jump|climbed|climbing|climb|improved|improving|improvement)\b/i;
+const DIRECTION_NEG_REGEX = /\b(decrease|decreases|decreased|decreasing|decline|declines|declined|declining|fell|fall|falls|falling|drop|drops|dropped|dropping|shrink|shrinks|shrank|shrunk|shrinking|contract|contracts|contracted|contracting|contraction|reduce|reduces|reduced|reducing|reduction|compress|compresses|compressed|compressing|compression|loss|losses|lost|losing|plunged|plunging|deteriorated|slumped)\b/i;
+
+const CAPABILITY_PAIRS = [
   { pos: /(?<!not\s+)\b(can predict|able to predict|capable of predicting)\b/i,
     neg: /\b(cannot predict|unable to predict|incapable of predicting)\b/i },
   { pos: /(?<!not\s+)\b(possible to|capable of|able to)\b/i,
@@ -415,18 +416,59 @@ function classifyEntailmentFast(claim: string, candidatePassages: CandidatePassa
   const cLower = claim.toLowerCase().replace(/['"“”]/g, '');
   const fullPassagesText = candidatePassages.map(p => p.text).join(' ').toLowerCase().replace(/['"“”]/g, '');
 
-  // 1. Direction / Polarity Conflict Check (Invariant 1: Catch trend & capability flips in <1ms)
-  for (const pair of REFINED_DIRECTION_PAIRS) {
-    const claimHasPos = pair.pos.test(cLower);
-    const claimHasNeg = pair.neg.test(cLower);
-    const passageHasPos = pair.pos.test(fullPassagesText);
-    const passageHasNeg = pair.neg.test(fullPassagesText);
+  // 1a. Global Direction / Polarity Conflict Check (Invariant 1: Catch trend flips in <1ms)
+  const claimHasPos = DIRECTION_POS_REGEX.test(cLower);
+  const claimHasNeg = DIRECTION_NEG_REGEX.test(cLower);
+  const passageHasPos = DIRECTION_POS_REGEX.test(fullPassagesText);
+  const passageHasNeg = DIRECTION_NEG_REGEX.test(fullPassagesText);
 
-    if (claimHasPos && !claimHasNeg && passageHasNeg && !passageHasPos) {
-      return { status: 'RED', reasoning: 'Claim asserts positive trend/capability while source states negation or opposite direction.' };
+  if (claimHasPos && !claimHasNeg && passageHasNeg && !passageHasPos) {
+    return { status: 'RED', reasoning: 'Claim asserts positive trend while source states negation or downward trend.' };
+  }
+  if (claimHasNeg && !claimHasPos && passageHasPos && !passageHasNeg) {
+    return { status: 'RED', reasoning: 'Claim asserts downward trend while source affirms growth or positive trend.' };
+  }
+
+  for (const pair of CAPABILITY_PAIRS) {
+    const cPos = pair.pos.test(cLower);
+    const cNeg = pair.neg.test(cLower);
+    const pPos = pair.pos.test(fullPassagesText);
+    const pNeg = pair.neg.test(fullPassagesText);
+
+    if (cPos && !cNeg && pNeg && !pPos) {
+      return { status: 'RED', reasoning: 'Claim asserts capability/profitability while source states negation.' };
     }
-    if (claimHasNeg && !claimHasPos && passageHasPos && !passageHasNeg) {
-      return { status: 'RED', reasoning: 'Claim asserts negation while source affirms capability or opposite direction.' };
+    if (cNeg && !cPos && pPos && !pNeg) {
+      return { status: 'RED', reasoning: 'Claim asserts incapacity/loss while source affirms capability or profit.' };
+    }
+  }
+
+  // 1b. Entity/Subject-Level Direction Conflict (when passage discusses multiple contrasting trends)
+  if ((claimHasPos && !claimHasNeg) || (claimHasNeg && !claimHasPos)) {
+    const claimDir = claimHasPos ? 'pos' : 'neg';
+    const STOPWORDS = new Set(['a', 'an', 'the', 'in', 'on', 'at', 'for', 'to', 'of', 'and', 'or', 'is', 'are', 'was', 'were', 'by', 'as', 'our', 'all', 'its', 'their', 'this', 'that', 'with', 'amidst', 'from', 'during']);
+    const cWords = cLower.match(/\b[a-z0-9_]{3,}\b/g) || [];
+    const pTokens = fullPassagesText.match(/\b[a-z0-9_]{2,}\b/g) || [];
+
+    const sharedEntities = cWords.filter(w => !STOPWORDS.has(w) && !DIRECTION_POS_REGEX.test(w) && !DIRECTION_NEG_REGEX.test(w) && fullPassagesText.includes(w));
+
+    if (sharedEntities.length > 0) {
+      for (let i = 0; i < pTokens.length; i++) {
+        if (sharedEntities.includes(pTokens[i])) {
+          const windowStart = Math.max(0, i - 4);
+          const windowEnd = Math.min(pTokens.length, i + 5);
+          for (let j = windowStart; j < windowEnd; j++) {
+            if (j === i) continue;
+            const token = pTokens[j];
+            if (claimDir === 'pos' && DIRECTION_NEG_REGEX.test(token)) {
+              return { status: 'RED', reasoning: `Source passage explicitly indicates an opposing downward trend (${token}) for ${pTokens[i]}.` };
+            }
+            if (claimDir === 'neg' && DIRECTION_POS_REGEX.test(token)) {
+              return { status: 'RED', reasoning: `Source passage explicitly indicates an opposing positive trend (${token}) for ${pTokens[i]}.` };
+            }
+          }
+        }
+      }
     }
   }
 
