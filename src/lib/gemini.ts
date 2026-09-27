@@ -416,7 +416,7 @@ function classifyEntailmentFast(claim: string, candidatePassages: CandidatePassa
   const cLower = claim.toLowerCase().replace(/['"“”]/g, '');
   const fullPassagesText = candidatePassages.map(p => p.text).join(' ').toLowerCase().replace(/['"“”]/g, '');
 
-  // 1a. Global Direction / Polarity Conflict Check (Invariant 1: Catch trend flips in <1ms)
+  // 1a. Global Direction / Polarity Conflict Check (Catch trend flips in <1ms)
   const claimHasPos = DIRECTION_POS_REGEX.test(cLower);
   const claimHasNeg = DIRECTION_NEG_REGEX.test(cLower);
   const passageHasPos = DIRECTION_POS_REGEX.test(fullPassagesText);
@@ -483,35 +483,46 @@ function classifyEntailmentFast(claim: string, candidatePassages: CandidatePassa
     if (conflictingNums.length > 0) {
       return { status: 'RED', reasoning: `Figures in claim (${conflictingNums.join(', ')}) contradict figures reported in source passage.` };
     }
-    if (cNums.every(n => pNums.includes(n))) {
-      const cWords = cLower.match(/\b[a-z]{3,}\b/g) || [];
-      const overlap = cWords.filter(w => fullPassagesText.includes(w)).length / (cWords.length || 1);
-      if (overlap >= 0.40) {
-        return { status: 'GREEN', reasoning: 'All figures and key entities verified against source passage.' };
-      }
+  }
+
+  // Semantic ambiguity audits: Defer to LLM if there is a polarity/negation conflict or modality shift
+  const NEGATION_REGEX = /\b(not|never|no|none|neither|nor|failed|fails|failing|failure|denied|denies|denying|rejected|rejects|prohibited|forbidden|banned|refused|without|prevented|hardly|scarcely)\b/i;
+  const claimHasNegation = NEGATION_REGEX.test(cLower);
+  const passageHasNegation = NEGATION_REGEX.test(fullPassagesText);
+  if (claimHasNegation && !passageHasNegation) {
+    return null; // Claim introduces negation not present in passage
+  }
+
+  const MODALITY_REGEX = /\b(definitely|certainly|allegedly|reportedly|speculates|intends|plans to|proposes|may|might|could|should|must|optional|mandatory|conditional|subject to)\b/i;
+  const claimHasModality = MODALITY_REGEX.test(cLower);
+  const passageHasModality = MODALITY_REGEX.test(fullPassagesText);
+  if (claimHasModality && !passageHasModality) {
+    return null; // Claim introduces modality/certainty not present in passage
+  }
+
+  // 3. Exact Verbatim Substring Corroboration (Only if zero number contradictions and zero negation shifts)
+  const trimmedClaim = cLower.trim().replace(/[.!?]+$/, '');
+  if (trimmedClaim.length >= 20 && fullPassagesText.includes(trimmedClaim)) {
+    if (cNums.length === 0 || cNums.every(n => pNums.includes(n))) {
+      return { status: 'GREEN', reasoning: 'Exact verbatim passage corroboration.' };
     }
   }
 
-  // 3. Verbatim Quote / Contiguous Span Match (>= 6 words directly quoted from source)
+  // 4. Ultra-High Confidence Span Entailment (>= 8 contiguous words matched verbatim)
   const cTokens = cLower.match(/\b[a-z0-9_]{2,}\b/g) || [];
-  for (let len = 6; len <= 12; len++) {
-    for (let i = 0; i <= cTokens.length - len; i++) {
-      const subphrase = cTokens.slice(i, i + len).join(' ');
-      if (fullPassagesText.includes(subphrase)) {
-        return { status: 'GREEN', reasoning: 'Verbatim phrase match corroborated by source passage.' };
-      }
+  if (cTokens.length >= 8 && (cNums.length === 0 || cNums.every(n => pNums.includes(n)))) {
+    const contiguousSpan = cTokens.join(' ');
+    if (fullPassagesText.includes(contiguousSpan)) {
+      return { status: 'GREEN', reasoning: 'Complete contiguous phrase match corroborated by source passage.' };
     }
   }
 
-  // 4. High-Confidence Lexical & Entailment Alignment (Only if no conflicting numbers)
-  if (cNums.length === 0 || cNums.every(n => pNums.includes(n))) {
-    const cWords = cLower.match(/\b[a-z]{3,}\b/g) || [];
-    const overlap = cWords.filter(w => fullPassagesText.includes(w)).length / (cWords.length || 1);
-    if (overlap >= 0.60) {
-      return { status: 'GREEN', reasoning: 'Strong semantic and factual alignment with source passage.' };
-    }
+  // If claim asserts a trend but passage doesn't corroborate it or has opposing signals, defer to LLM
+  if (claimHasPos || claimHasNeg) {
+    return null;
   }
 
+  // All loose word overlap, entity paraphrasing, or potential hallucinations defer to LLM
   return null;
 }
 
@@ -572,20 +583,42 @@ export async function classifySentenceVerdict(
     return verdictCache.get(cacheKey)!;
   }
 
-  const prompt = `[Context]
-You are checking whether a claim is supported by passages retrieved from a source document.
+  const prompt = `[Role]
+You are an adversarial, zero-outside-knowledge factual entailment auditor.
 
-[Role]
-You are a factual entailment and verification classifier.
+[Task]
+Evaluate whether the following CLAIM is logically entailed, directly contradicted, or unverifiable based EXCLUSIVELY on the provided RETRIEVED PASSAGES.
 
-[Instruction]
-Given the CLAIM and the RETRIEVED PASSAGES, determine whether the claim is SUPPORTED, CONTRADICTED, or UNVERIFIABLE.
-Respond with exactly one word: SUPPORTED, CONTRADICTED, or UNVERIFIABLE.
+[CRITICAL AUDIT RULES]
+1. ZERO OUTSIDE KNOWLEDGE: You possess NO knowledge beyond the text in the RETRIEVED PASSAGES. Even if an assertion is true in the real world or common knowledge, if it is not explicitly affirmed by the passages, it CANNOT be marked SUPPORTED.
+2. ADVERSARIAL SCRUTINY: Rigorously audit entities, actors, actions, numbers, modality, and causal outcomes.
 
-[Rules]
-- SUPPORTED: The passages directly state, affirm, or logically entail the claim (including semantic paraphrases, policy statements, recommendations, numbers, or facts). If the primary factual proposition or recommendation is affirmed by the passage, classify as SUPPORTED, even if standard introductory framing phrases (e.g. 'While this model offers benefits...') are present.
-- CONTRADICTED: A passage addresses the same topic but directly contradicts a key fact, number, date, or reverses a direction/negation (e.g. claimed "can predict" when source says "cannot predict", or "fell" vs "rose").
-- UNVERIFIABLE: The passages do not contain enough information to substantiate or refute the claim.
+[CLASSIFICATION CRITERIA]
+
+- CONTRADICTED:
+  Mark CONTRADICTED if the claim directly conflicts with or negates the passages in ANY of the following ways:
+  * Entity/Actor mismatch: Swapped subjects or objects, or falsely attributed actions (e.g., claiming Party A sued Party B when Party B sued Party A; attributing actions to the wrong organization).
+  * Action/Outcome conflict: Contradicting status or results (e.g., claiming a deal closed when negotiations were paused; claiming an action is mandatory when the text states it is optional).
+  * Trend/Polarity flip: Inverted directions, antonyms, or negations (e.g., increase vs. decrease, rose vs. fell, pass vs. fail, accelerate vs. slow down).
+  * Factual/Numerical mismatch: Dates, numbers, percentages, currencies, locations, or sequences that conflict with the passages.
+  * Modality/Certainty creep: Claiming an event definitely happened when the source expresses speculation, intention, proposal, or conditions.
+
+- SUPPORTED:
+  Mark SUPPORTED ONLY if:
+  * Every distinct factual assertion, entity, actor, number, and action in the claim is directly affirmed or logically entailed by the retrieved passages.
+  * Paraphrasing is allowed ONLY if it preserves the exact factual meaning without adding unverified details or changing certainty.
+
+- UNVERIFIABLE:
+  Mark UNVERIFIABLE (the default fail-closed choice) if:
+  * The passages lack explicit proof to either confirm or refute the claim.
+  * The claim contains extraneous unverified details or embellishments not found in the passages.
+  * The claim speculates or extrapolates beyond what the text directly proves.
+
+[OUTPUT FORMAT]
+Respond with EXACTLY ONE word and nothing else:
+SUPPORTED
+CONTRADICTED
+UNVERIFIABLE
 
 CLAIM: ${sentence}
 
@@ -609,7 +642,7 @@ VERDICT:`;
             messages: [
               { role: 'user', content: prompt }
             ],
-            max_tokens: 10,
+            max_tokens: 16,
             temperature: 0.0,
             stream: false
           })
@@ -649,12 +682,16 @@ VERDICT:`;
       const rawVerdictValue = rawText.trim().toUpperCase();
 
       let status: VerificationStatus = 'AMBER';
-      if (rawVerdictValue.includes('SUPPORTED') && !rawVerdictValue.includes('CONTRADICTED') && !rawVerdictValue.includes('UNVERIFIABLE')) {
-        status = 'GREEN';
-      } else if (rawVerdictValue.includes('CONTRADICTED')) {
+      let reasoning = '';
+      if (rawVerdictValue.includes('CONTRADICTED')) {
         status = 'RED';
+        reasoning = 'Claim directly conflicts with facts, entities, actions, or outcomes reported in source passages.';
+      } else if (rawVerdictValue.includes('SUPPORTED') && !rawVerdictValue.includes('UNSUPPORTED') && !rawVerdictValue.includes('NOT SUPPORTED') && !rawVerdictValue.includes('UNVERIFIABLE')) {
+        status = 'GREEN';
+        reasoning = 'Claim is fully corroborated and logically entailed by source passages.';
       } else {
         status = 'AMBER';
+        reasoning = 'Passages lack explicit evidence to confirm or refute the claim.';
       }
 
       const durationMs = Math.round(performance.now() - t0);
@@ -671,7 +708,7 @@ VERDICT:`;
 
       const resultObj = {
         status,
-        reasoning: ''
+        reasoning
       };
       verdictCache.set(cacheKey, resultObj);
       return resultObj;
@@ -698,7 +735,8 @@ VERDICT:`;
             model: m,
             contents: prompt,
             config: {
-              temperature: 0.0
+              temperature: 0.0,
+              maxOutputTokens: 16
             }
           });
           if (response) break;
@@ -712,12 +750,16 @@ VERDICT:`;
       const rawVerdictValue = rawText.trim().toUpperCase();
 
       let status: VerificationStatus = 'AMBER';
-      if (rawVerdictValue.includes('SUPPORTED') && !rawVerdictValue.includes('CONTRADICTED') && !rawVerdictValue.includes('UNVERIFIABLE')) {
-        status = 'GREEN';
-      } else if (rawVerdictValue.includes('CONTRADICTED')) {
+      let reasoning = '';
+      if (rawVerdictValue.includes('CONTRADICTED')) {
         status = 'RED';
+        reasoning = 'Claim directly conflicts with facts, entities, actions, or outcomes reported in source passages.';
+      } else if (rawVerdictValue.includes('SUPPORTED') && !rawVerdictValue.includes('UNSUPPORTED') && !rawVerdictValue.includes('NOT SUPPORTED') && !rawVerdictValue.includes('UNVERIFIABLE')) {
+        status = 'GREEN';
+        reasoning = 'Claim is fully corroborated and logically entailed by source passages.';
       } else {
         status = 'AMBER';
+        reasoning = 'Passages lack explicit evidence to confirm or refute the claim.';
       }
 
       const durationMs = Math.round(performance.now() - t0);
@@ -738,10 +780,12 @@ VERDICT:`;
         }));
       }
 
-      return {
+      const resultObj = {
         status,
-        reasoning: ''
+        reasoning
       };
+      verdictCache.set(cacheKey, resultObj);
+      return resultObj;
     });
   } catch (err: unknown) {
     console.error('Error in classifySentenceVerdict across all keys, falling back to AMBER:', err);
