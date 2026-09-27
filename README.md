@@ -6,14 +6,14 @@ Tripwire intercepts streaming Large Language Model (LLM) responses and validates
 
 ---
 
-## Architecture & End-to-End Flow
+## Architecture & Verification Flow
 
 Tripwire pairs **Moss's sub-10ms semantic retrieval** with an independent factual entailment classifier, embedding verification directly into the inter-token streaming window:
 
 ```mermaid
 flowchart TD
     subgraph Ingestion ["1. Multi-Layer Document Intake & Indexing"]
-        DOC["Documents (PDF / TXT / MD)"] --> PARSE{"3-Layer Parser"}
+        DOC["Source Documents (PDF / TXT / MD)"] --> PARSE{"3-Layer Intake Engine"}
         PARSE -->|"Layer 1 (5ms)"| PURE_NODE["Pure Node zlib Extractor"]
         PARSE -->|"Layer 2"| PDF_PARSE["pdf-parse (CJS)"]
         PARSE -->|"Layer 3"| GEMINI_OCR["Gemini Multimodal OCR"]
@@ -58,71 +58,23 @@ flowchart TD
 
 ---
 
-## Sentence-Level Lifecycle (Sequence Diagram)
+## What Sets Tripwire Apart
 
-```mermaid
-sequenceDiagram
-    autonumber
-    actor User
-    participant Frontend as Client Workspace
-    participant StreamAPI as /api/generate
-    participant LLM as HiDevs / Gemini
-    participant VerifyAPI as /api/verify
-    participant Moss as Moss Index (<1ms)
-    participant Classifier as Entailment Classifier
-
-    User->>Frontend: Submit question (or Voice QA)
-    Frontend->>StreamAPI: POST /api/generate (SSE)
-    StreamAPI->>LLM: Stream answer tokens
-    loop Token Streaming
-        LLM-->>Frontend: Chunk of tokens
-        Frontend->>Frontend: SentenceDetector.addToken()
-        alt Sentence Boundary Formed
-            Frontend->>Frontend: Queue sentence in strict reading order
-            Frontend->>VerifyAPI: POST /api/verify (sentence, sessionId)
-            VerifyAPI->>VerifyAPI: isTrivialClaim() check
-            alt Is Factual Claim
-                VerifyAPI->>Moss: Query top-3 candidate passages
-                Moss-->>VerifyAPI: Candidates + similarity scores (<1ms)
-                VerifyAPI->>Classifier: classifySentenceVerdict(sentence, candidates)
-                Classifier-->>VerifyAPI: Status (GREEN / RED / AMBER) + Reasoning
-            else Is Filler
-                VerifyAPI-->>Frontend: Status GREY
-            end
-            VerifyAPI-->>Frontend: Return verdict + retrievalLatencyMs
-            Frontend->>Frontend: Render color underline in strict sequential order
-            Frontend->>Frontend: Update live retrieval latency counter
-        end
-    end
-    opt Inspect Claim
-        User->>Frontend: Click underlined sentence
-        Frontend->>Frontend: Open Evidence Drawer with source passage
-        User->>Frontend: Click 'Probe Counter-Evidence'
-        Frontend->>Moss: Query contrastive vector
-        Moss-->>Frontend: Exceptions, conditions, and caveats (<10ms)
-    end
-```
-
----
-
-## Core Features & Invariant Safeguards
-
-| Feature | Description | PRD Spec |
-| :--- | :--- | :--- |
-| **In-Stream Verification** | Evaluates sentences concurrently as tokens stream—no post-generation wait. | FR-4, FR-5 |
-| **Similarity Is Not Truth** | Vector similarity finds candidate passages; truth is judged independently. Catches direction flips (*rose* vs *fell*) and altered numbers. | Invariant 1, FR-8 |
-| **Sub-10ms Moss Retrieval** | In-process HNSW vector search resolves per-sentence queries in single-digit milliseconds ($<1\text{ms}$ locally). | FR-3, FR-7 |
-| **Fail-Safe Verdict Defaults** | On any timeout, network error, or rate limit, verdicts safely default to **AMBER** (never false GREEN). | Invariant 3, FR-8 |
-| **Strict Ordered Rendering** | Highlight colors render strictly in reading sequence, even when parallel background calls resolve out of order. | Invariant 5, FR-9 |
-| **Live Latency Meter** | Real-time counter tracks honest microsecond retrieval latency (e.g., `verified 12 claims · avg 0.8ms`). | FR-9 |
-| **Transparent A/B Toggle** | Live side-by-side comparison of Moss ($<1\text{ms}$) vs un-mocked brute-force cosine scan ($>500\text{ms}$). | FR-12 |
-| **Automatic Explanations** | Non-blocking secondary call generates single-line plain-English explanations for RED or AMBER flags. | FR-10 |
-| **Evidence Audit Drawer** | Click any claim to inspect exact source document passages, page numbers, character offsets, and similarity scores. | FR-11 |
-| **Counter-Evidence Engine** | Synthesizes contrast vectors to surface hidden exceptions, exemptions, and caveats for any claim in $<10\text{ms}$. | Showcase |
-| **Spotlight Palette (`Cmd+K`)** | Instant document-wide semantic search powered by Moss with 1-click QA seeding and excerpt copying. | Showcase |
-| **Dynamic Topic Seeds** | Auto-generates tailored analytical starter questions from document vector clusters on zero-state threads. | Showcase |
-| **Adversarial Stress Test** | Live toggle mutating financial figures and metrics on the fly to test guardrail response live on stage. | Showcase |
-| **Voice QA & Audio Agent** | Hands-free voice questioning via LiveKit / Deepgram STT, plus standalone real-time WebRTC audio agent (`/agent`). | Showcase |
+- **In-Stream Factual Verification**: Evaluates grammatical claims concurrently as tokens stream, eliminating the multi-second post-generation evaluation bottleneck.
+- **"Similarity Is Not Truth" Safeguard**: Decouples retrieval from truth-judgment. High vector similarity does not imply agreement—Tripwire detects direction flips (*"increased"* vs. *"decreased"*) and altered numbers that standard RAG systems falsely trust.
+- **Sub-10ms Moss Retrieval Layer**: Leverages Moss to resolve independent, per-sentence vector queries in single-digit milliseconds ($<1\text{ms}$ locally), keeping pace with raw LLM generation.
+- **Dual-Path Factual Entailment**: Instant sub-millisecond in-memory validation for directional and numerical consistency, paired with an LLM classifier for complex semantic entailment.
+- **Ordered Progressive Rendering**: Even with parallelized background retrieval and classification, visual highlights resolve in strict reading order to eliminate visual jitter.
+- **Live Latency Telemetry**: Real-time counter tracks honest microsecond retrieval latency (e.g., `verified 12 claims · avg 0.8ms`).
+- **Transparent A/B Latency Benchmarking**: Integrated side-by-side mode comparing Moss against an un-mocked brute-force vector scan, instrumented with real microsecond clocks.
+- **Automated Mismatch Explanations**: Non-blocking secondary call generates single-line plain-English explanations for flagged claims without delaying stream rendering.
+- **Interactive Citation & Audit Drawer**: Direct click-to-inspect citations displaying source document passages, page numbers, character offsets, and similarity scores.
+- **Spotlight Semantic Palette (`Cmd+K` / `Ctrl+K`)**: Instant document-wide semantic search powered by Moss, featuring one-click QA prompt seeding and excerpt copying.
+- **Counter-Evidence & Caveat Probing**: Synthesizes contrast vectors to surface hidden exceptions, limitations, and policy exemptions for any selected claim in $<10\text{ms}$.
+- **Dynamic Topic Seed Chips**: Clusters document vectors on ingestion to generate tailored analytical starter questions on zero-state threads.
+- **Adversarial Stress Test Mode**: On-the-fly mutation of financial metrics to test the guardrail against adversarial hallucinations live on stage.
+- **Voice QA & Real-Time Audio Agent**: Hands-free voice questioning via LiveKit / Deepgram STT, plus a standalone real-time WebRTC audio agent (`/agent`).
+- **3-Layer Resilient Document Parsing**: Multi-tier extraction spanning pure Node.js zlib stream inflation (5ms native), zero-worker `pdf-parse`, and Gemini Multimodal OCR for scanned PDFs.
 
 ---
 
@@ -155,7 +107,7 @@ PASS __tests__/sentence-boundary.test.ts (abbreviation & decimal boundary detect
 PASS __tests__/trivial-filter.test.ts    (filler/transition claim filtering)
 PASS __tests__/moss.test.ts              (sub-10ms index creation and retrieval)
 PASS __tests__/baseline.test.ts          (un-mocked brute-force cosine benchmark)
-PASS __tests__/verdict-classifier.test.ts(FR-8 10/10 contradiction acceptance suite)
+PASS __tests__/verdict-classifier.test.ts(10/10 contradiction acceptance suite)
 PASS __tests__/failover.test.ts          (multi-key failover and 503/429 parsing)
 
 Test Suites: 8 passed, 8 total
