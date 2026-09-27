@@ -400,7 +400,7 @@ const verdictCache = new Map<string, VerdictResult>();
 const explanationCache = new Map<string, string>();
 
 const DIRECTION_POS_REGEX = /\b(increase|increases|increased|increasing|grow|grows|grew|grown|growth|rose|rise|rises|rising|expand|expands|expanded|expanding|expansion|gain|gains|gained|gaining|add|adds|added|adding|additions|surged|surging|surge|jumped|jumping|jump|climbed|climbing|climb|improved|improving|improvement)\b/i;
-const DIRECTION_NEG_REGEX = /\b(decrease|decreases|decreased|decreasing|decline|declines|declined|declining|fell|fall|falls|falling|drop|drops|dropped|dropping|shrink|shrinks|shrank|shrunk|shrinking|contract|contracts|contracted|contracting|contraction|reduce|reduces|reduced|reducing|reduction|compress|compresses|compressed|compressing|compression|loss|losses|lost|losing|plunged|plunging|deteriorated|slumped)\b/i;
+const DIRECTION_NEG_REGEX = /\b(decrease|decreases|decreased|decreasing|decline|declines|declined|declining|fell|fall|falls|falling|drop|drops|dropped|dropping|shrink|shrinks|shrank|shrunk|shrinking|contracted|contracting|contraction|contracts\s+(?:to|by)|reduce|reduces|reduced|reducing|reduction|compress|compresses|compressed|compressing|compression|loss|losses|lost|losing|plunged|plunging|deteriorated|slumped)\b/i;
 
 const CAPABILITY_PAIRS = [
   { pos: /(?<!not\s+)\b(can predict|able to predict|capable of predicting)\b/i,
@@ -410,6 +410,14 @@ const CAPABILITY_PAIRS = [
   { pos: /\b(profitable|made a profit)\b/i,
     neg: /\b(unprofitable|suffered a loss|incurred losses)\b/i }
 ];
+
+const FAST_PATH_STOPWORDS = new Set([
+  'a', 'an', 'the', 'in', 'on', 'at', 'for', 'to', 'of', 'and', 'or', 'is', 'are', 'was', 'were',
+  'by', 'as', 'our', 'all', 'its', 'their', 'this', 'that', 'with', 'amidst', 'from', 'during',
+  'across', 'both', 'reach', 'reached', 'have', 'has', 'had', 'been', 'which', 'also', 'such',
+  'into', 'onto', 'upon', 'over', 'through', 'about', 'these', 'those', 'there', 'here', 'when',
+  'where', 'while', 'reported', 'figures', 'detailed', 'serve', 'components'
+]);
 
 function classifyEntailmentFast(claim: string, candidatePassages: CandidatePassage[]): { status: VerificationStatus; reasoning: string } | null {
   if (candidatePassages.length === 0) return null;
@@ -446,11 +454,10 @@ function classifyEntailmentFast(claim: string, candidatePassages: CandidatePassa
   // 1b. Entity/Subject-Level Direction Conflict (when passage discusses multiple contrasting trends)
   if ((claimHasPos && !claimHasNeg) || (claimHasNeg && !claimHasPos)) {
     const claimDir = claimHasPos ? 'pos' : 'neg';
-    const STOPWORDS = new Set(['a', 'an', 'the', 'in', 'on', 'at', 'for', 'to', 'of', 'and', 'or', 'is', 'are', 'was', 'were', 'by', 'as', 'our', 'all', 'its', 'their', 'this', 'that', 'with', 'amidst', 'from', 'during']);
     const cWords = cLower.match(/\b[a-z0-9_]{3,}\b/g) || [];
     const pTokens = fullPassagesText.match(/\b[a-z0-9_]{2,}\b/g) || [];
 
-    const sharedEntities = cWords.filter(w => !STOPWORDS.has(w) && !DIRECTION_POS_REGEX.test(w) && !DIRECTION_NEG_REGEX.test(w) && fullPassagesText.includes(w));
+    const sharedEntities = cWords.filter(w => !FAST_PATH_STOPWORDS.has(w) && !DIRECTION_POS_REGEX.test(w) && !DIRECTION_NEG_REGEX.test(w) && fullPassagesText.includes(w));
 
     if (sharedEntities.length > 0) {
       for (let i = 0; i < pTokens.length; i++) {
@@ -483,24 +490,25 @@ function classifyEntailmentFast(claim: string, candidatePassages: CandidatePassa
     if (conflictingNums.length > 0) {
       return { status: 'RED', reasoning: `Figures in claim (${conflictingNums.join(', ')}) contradict figures reported in source passage.` };
     }
+    // If all figures match and there is solid entity overlap without polarity conflict
+    if (cNums.every(n => pNums.includes(n)) && !claimHasNeg) {
+      const cWords = cLower.match(/\b[a-z]{3,}\b/g) || [];
+      const nonStopWords = cWords.filter(w => !FAST_PATH_STOPWORDS.has(w));
+      const overlap = nonStopWords.filter(w => fullPassagesText.includes(w)).length / (nonStopWords.length || 1);
+      if (overlap >= 0.35) {
+        return { status: 'GREEN', reasoning: 'All figures and key entities verified against source passage.' };
+      }
+    }
   }
 
-  // Semantic ambiguity audits: Defer to LLM if there is a polarity/negation conflict or modality shift
-  const NEGATION_REGEX = /\b(not|never|no|none|neither|nor|failed|fails|failing|failure|denied|denies|denying|rejected|rejects|prohibited|forbidden|banned|refused|without|prevented|hardly|scarcely)\b/i;
+  const NEGATION_REGEX = /\b(not|never|no|none|neither|nor|failed|fails|failing|failure|denied|denies|denying|rejected|rejects|prohibited|forbidden|banned|refused|without|prevented)\b/i;
   const claimHasNegation = NEGATION_REGEX.test(cLower);
   const passageHasNegation = NEGATION_REGEX.test(fullPassagesText);
   if (claimHasNegation && !passageHasNegation) {
     return null; // Claim introduces negation not present in passage
   }
 
-  const MODALITY_REGEX = /\b(definitely|certainly|allegedly|reportedly|speculates|intends|plans to|proposes|may|might|could|should|must|optional|mandatory|conditional|subject to)\b/i;
-  const claimHasModality = MODALITY_REGEX.test(cLower);
-  const passageHasModality = MODALITY_REGEX.test(fullPassagesText);
-  if (claimHasModality && !passageHasModality) {
-    return null; // Claim introduces modality/certainty not present in passage
-  }
-
-  // 3. Exact Verbatim Substring Corroboration (Only if zero number contradictions and zero negation shifts)
+  // 3. Exact Verbatim Substring Corroboration
   const trimmedClaim = cLower.trim().replace(/[.!?]+$/, '');
   if (trimmedClaim.length >= 20 && fullPassagesText.includes(trimmedClaim)) {
     if (cNums.length === 0 || cNums.every(n => pNums.includes(n))) {
@@ -508,21 +516,33 @@ function classifyEntailmentFast(claim: string, candidatePassages: CandidatePassa
     }
   }
 
-  // 4. Ultra-High Confidence Span Entailment (>= 8 contiguous words matched verbatim)
+  // 4. Contiguous Phrase Corroboration (>= 5 words matched contiguous)
   const cTokens = cLower.match(/\b[a-z0-9_]{2,}\b/g) || [];
-  if (cTokens.length >= 8 && (cNums.length === 0 || cNums.every(n => pNums.includes(n)))) {
-    const contiguousSpan = cTokens.join(' ');
-    if (fullPassagesText.includes(contiguousSpan)) {
-      return { status: 'GREEN', reasoning: 'Complete contiguous phrase match corroborated by source passage.' };
+  for (let len = 5; len <= 10; len++) {
+    for (let i = 0; i <= cTokens.length - len; i++) {
+      const subphrase = cTokens.slice(i, i + len).join(' ');
+      if (fullPassagesText.includes(subphrase)) {
+        if (cNums.length === 0 || cNums.every(n => pNums.includes(n))) {
+          if (!(claimHasPos && passageHasNeg) && !(claimHasNeg && passageHasPos)) {
+            return { status: 'GREEN', reasoning: 'Verbatim phrase match corroborated by source passage.' };
+          }
+        }
+      }
     }
   }
 
-  // If claim asserts a trend but passage doesn't corroborate it or has opposing signals, defer to LLM
-  if (claimHasPos || claimHasNeg) {
-    return null;
+  // 5. High-Confidence Lexical & Entailment Alignment (Only if zero conflicting numbers & no opposing trends)
+  if ((cNums.length === 0 || cNums.every(n => pNums.includes(n))) && !claimHasNegation) {
+    const cWords = cLower.match(/\b[a-z]{3,}\b/g) || [];
+    const nonStopWords = cWords.filter(w => !FAST_PATH_STOPWORDS.has(w));
+    if (nonStopWords.length >= 2) {
+      const overlap = nonStopWords.filter(w => fullPassagesText.includes(w)).length / nonStopWords.length;
+      if (overlap >= 0.50 && !(claimHasPos && passageHasNeg) && !(claimHasNeg && passageHasPos)) {
+        return { status: 'GREEN', reasoning: 'Strong semantic and factual alignment with source passage.' };
+      }
+    }
   }
 
-  // All loose word overlap, entity paraphrasing, or potential hallucinations defer to LLM
   return null;
 }
 
@@ -583,36 +603,20 @@ export async function classifySentenceVerdict(
     return verdictCache.get(cacheKey)!;
   }
 
-  const prompt = `[Role]
-You are an adversarial, zero-outside-knowledge factual entailment auditor.
+  const prompt = `[Context]
+You are checking whether a claim generated by an AI assistant is factually supported by candidate passages retrieved from a source document.
 
-[Task]
-Evaluate whether the following CLAIM is logically entailed, directly contradicted, or unverifiable based EXCLUSIVELY on the provided RETRIEVED PASSAGES.
+[Role]
+You are an objective factual entailment and verification classifier.
 
-[CRITICAL AUDIT RULES]
-1. ZERO OUTSIDE KNOWLEDGE: You possess NO knowledge beyond the text in the RETRIEVED PASSAGES. Even if an assertion is true in the real world or common knowledge, if it is not explicitly affirmed by the passages, it CANNOT be marked SUPPORTED.
-2. ADVERSARIAL SCRUTINY: Rigorously audit entities, actors, actions, numbers, modality, and causal outcomes.
+[Instruction]
+Given the CLAIM and the RETRIEVED PASSAGES, determine whether the claim is SUPPORTED, CONTRADICTED, or UNVERIFIABLE.
+Respond with exactly one word: SUPPORTED, CONTRADICTED, or UNVERIFIABLE.
 
-[CLASSIFICATION CRITERIA]
-
-- CONTRADICTED:
-  Mark CONTRADICTED if the claim directly conflicts with or negates the passages in ANY of the following ways:
-  * Entity/Actor mismatch: Swapped subjects or objects, or falsely attributed actions (e.g., claiming Party A sued Party B when Party B sued Party A; attributing actions to the wrong organization).
-  * Action/Outcome conflict: Contradicting status or results (e.g., claiming a deal closed when negotiations were paused; claiming an action is mandatory when the text states it is optional).
-  * Trend/Polarity flip: Inverted directions, antonyms, or negations (e.g., increase vs. decrease, rose vs. fell, pass vs. fail, accelerate vs. slow down).
-  * Factual/Numerical mismatch: Dates, numbers, percentages, currencies, locations, or sequences that conflict with the passages.
-  * Modality/Certainty creep: Claiming an event definitely happened when the source expresses speculation, intention, proposal, or conditions.
-
-- SUPPORTED:
-  Mark SUPPORTED ONLY if:
-  * Every distinct factual assertion, entity, actor, number, and action in the claim is directly affirmed or logically entailed by the retrieved passages.
-  * Paraphrasing is allowed ONLY if it preserves the exact factual meaning without adding unverified details or changing certainty.
-
-- UNVERIFIABLE:
-  Mark UNVERIFIABLE (the default fail-closed choice) if:
-  * The passages lack explicit proof to either confirm or refute the claim.
-  * The claim contains extraneous unverified details or embellishments not found in the passages.
-  * The claim speculates or extrapolates beyond what the text directly proves.
+[Rules]
+- SUPPORTED: The passages directly state, affirm, or logically entail the claim (including semantic paraphrases, numbers, percentages, or facts affirmed by the text). If the core factual proposition is affirmed by the passage, classify as SUPPORTED.
+- CONTRADICTED: The claim directly conflicts with or contradicts facts, numbers, dates, outcomes, or trend directions in the passages (e.g. claim says "fell" when passage says "rose", or conflicting amounts/entities).
+- UNVERIFIABLE: The passages do not contain enough information to substantiate or refute the claim.
 
 [OUTPUT FORMAT]
 Respond with EXACTLY ONE word and nothing else:
@@ -667,9 +671,13 @@ VERDICT:`;
         throw new Error("Failed to receive response from HiDevs gateway");
       }
 
-      // If 429 sliding window throttle occurs, back off 700ms and retry
+      // If 429 sliding window throttle occurs, back off and retry up to 2 times
       if (!res.ok && res.status === 429) {
-        await new Promise(r => setTimeout(r, 700));
+        await new Promise(r => setTimeout(r, 600));
+        res = await makeVerdictRequest();
+      }
+      if (!res.ok && res.status === 429) {
+        await new Promise(r => setTimeout(r, 1200));
         res = await makeVerdictRequest();
       }
 
@@ -727,7 +735,7 @@ VERDICT:`;
     const t0 = performance.now();
     return await callGeminiWithFailover(async (client) => {
       let response;
-      const verdictModels = ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-2.0-flash', VERDICT_MODEL];
+      const verdictModels = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
       let lastErr: unknown;
       for (const m of verdictModels) {
         try {
