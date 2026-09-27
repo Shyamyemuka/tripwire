@@ -8,8 +8,103 @@ export interface ChunkingResult {
 
 const MAX_PAGES = 200;
 const MAX_WORDS = 100000;
-const CHUNK_SIZE_WORDS = 200;
-const CHUNK_OVERLAP_WORDS = 40;
+const CHUNK_SIZE_WORDS = 140;
+const CHUNK_OVERLAP_WORDS = 30;
+
+function isSentenceEndWord(word: string): boolean {
+  if (!/[.!?]["']?$/.test(word)) return false;
+  const clean = word.toLowerCase().replace(/["']/g, '');
+  // Ignore standard abbreviations
+  if (/^(e\.g\.|i\.e\.|u\.s\.|dr\.|mr\.|mrs\.|ms\.|vs\.|inc\.|corp\.|ltd\.|\d+\.)$/.test(clean)) {
+    return false;
+  }
+  return true;
+}
+
+export function slicePageIntoChunks(
+  pageText: string,
+  pageNumber: number,
+  documentName: string,
+  startChunkIndex: number,
+  globalCharOffset: number
+): { chunks: ChunkRecord[]; nextChunkIndex: number } {
+  const words = pageText.split(/\s+/).filter(Boolean);
+  if (words.length === 0) {
+    return { chunks: [], nextChunkIndex: startChunkIndex };
+  }
+
+  const chunks: ChunkRecord[] = [];
+  let chunkIndex = startChunkIndex;
+  let startIndex = 0;
+  let lastSearchPos = 0;
+
+  while (startIndex < words.length) {
+    let endIndex: number;
+
+    if (startIndex + CHUNK_SIZE_WORDS >= words.length) {
+      endIndex = words.length;
+    } else {
+      // Search backward from target end for a sentence boundary
+      const targetEnd = startIndex + CHUNK_SIZE_WORDS;
+      const minEnd = startIndex + Math.floor(CHUNK_SIZE_WORDS * 0.65);
+      let foundEnd = -1;
+
+      for (let k = targetEnd - 1; k >= minEnd; k--) {
+        if (isSentenceEndWord(words[k])) {
+          foundEnd = k + 1; // slice is non-inclusive, so includes word k
+          break;
+        }
+      }
+
+      endIndex = foundEnd !== -1 ? foundEnd : targetEnd;
+    }
+
+    const chunkWords = words.slice(startIndex, endIndex);
+    const chunkText = chunkWords.join(' ').trim();
+
+    if (chunkText.length > 0) {
+      // Find accurate character offset within page
+      const searchProbe = chunkText.slice(0, Math.min(40, chunkText.length));
+      const foundPos = pageText.indexOf(searchProbe, lastSearchPos);
+      const pageOffset = foundPos >= 0 ? foundPos : lastSearchPos;
+      lastSearchPos = pageOffset;
+
+      const startOffset = globalCharOffset + pageOffset;
+      const endOffset = startOffset + chunkText.length;
+
+      chunks.push({
+        chunkId: `chunk-${chunkIndex++}`,
+        text: chunkText,
+        pageNumber,
+        charOffsetStart: startOffset,
+        charOffsetEnd: endOffset,
+        documentName
+      });
+    }
+
+    if (endIndex >= words.length) {
+      break;
+    }
+
+    // Advance startIndex with overlap, preferably at a sentence start
+    const rawNextStart = Math.max(startIndex + 1, endIndex - CHUNK_OVERLAP_WORDS);
+    let nextStart = rawNextStart;
+
+    // Check if there is a sentence boundary near rawNextStart to start cleanly on a sentence
+    const searchWindowStart = Math.max(startIndex + 1, rawNextStart - 10);
+    const searchWindowEnd = Math.min(endIndex - 5, rawNextStart + 10);
+    for (let k = searchWindowEnd; k >= searchWindowStart; k--) {
+      if (isSentenceEndWord(words[k]) && k + 1 < endIndex && k + 1 > startIndex) {
+        nextStart = k + 1;
+        break;
+      }
+    }
+
+    startIndex = nextStart;
+  }
+
+  return { chunks, nextChunkIndex: chunkIndex };
+}
 
 export interface PageInput {
   pageNumber: number;
@@ -18,7 +113,7 @@ export interface PageInput {
 
 /**
  * FR-2: Document Chunking and Size Limit Enforcement
- * Enforces max 20 pages / 8,000 words with ~200 word chunks and ~40 word overlap.
+ * Enforces max 200 pages / 100,000 words with ~140 word sentence-bounded chunks.
  */
 export function chunkDocument(
   filename: string,
@@ -45,13 +140,13 @@ export function chunkDocument(
     totalWords += wordCount;
   }
 
-  // 2. Enforce Word Limit (~8,000 words)
+  // 2. Enforce Word Limit (~100,000 words)
   if (totalWords > MAX_WORDS) {
     truncated = true;
     truncatedPageRange = (truncatedPageRange ? truncatedPageRange + '; ' : '') +
       `Exceeded ${MAX_WORDS.toLocaleString()} words cap (truncated to first ${MAX_WORDS.toLocaleString()} words)`;
     
-    // Trim pages to first 8,000 words
+    // Trim pages to first 100,000 words
     let remainingWords = MAX_WORDS;
     const trimmedPages: PageInput[] = [];
     for (const p of processedPages) {
@@ -70,7 +165,7 @@ export function chunkDocument(
     totalWords = MAX_WORDS;
   }
 
-  // 3. Generate Overlapping Chunks (~200 words with ~40-word overlap)
+  // 3. Generate Overlapping Sentence-Bounded Chunks (~140 words)
   const chunks: ChunkRecord[] = [];
   let globalCharOffset = 0;
   let chunkIndex = 0;
@@ -79,32 +174,9 @@ export function chunkDocument(
     const pageText = page.text.trim();
     if (!pageText) continue;
 
-    const words = pageText.split(/\s+/).filter(Boolean);
-    const step = CHUNK_SIZE_WORDS - CHUNK_OVERLAP_WORDS; // 160 words per step
-
-    for (let i = 0; i < words.length; i += step) {
-      const chunkWords = words.slice(i, i + CHUNK_SIZE_WORDS);
-      const chunkText = chunkWords.join(' ');
-      
-      // Calculate approximate character offset within page
-      const pageOffset = pageText.indexOf(chunkWords[0]);
-      const startOffset = globalCharOffset + (pageOffset >= 0 ? pageOffset : 0);
-      const endOffset = startOffset + chunkText.length;
-
-      chunks.push({
-        chunkId: `chunk-${chunkIndex++}`,
-        text: chunkText,
-        pageNumber: page.pageNumber,
-        charOffsetStart: startOffset,
-        charOffsetEnd: endOffset,
-        documentName: filename
-      });
-
-      // If we reached the end of the page's words
-      if (i + CHUNK_SIZE_WORDS >= words.length) {
-        break;
-      }
-    }
+    const result = slicePageIntoChunks(pageText, page.pageNumber, filename, chunkIndex, globalCharOffset);
+    chunks.push(...result.chunks);
+    chunkIndex = result.nextChunkIndex;
 
     globalCharOffset += pageText.length + 1; // +1 for newline between pages
   }
@@ -275,30 +347,9 @@ export function chunkMultipleDocuments(documents: InputDocument[]): ChunkingResu
       const pageText = page.text.trim();
       if (!pageText) continue;
 
-      const words = pageText.split(/\s+/).filter(Boolean);
-      const step = CHUNK_SIZE_WORDS - CHUNK_OVERLAP_WORDS;
-
-      for (let i = 0; i < words.length; i += step) {
-        const chunkWords = words.slice(i, i + CHUNK_SIZE_WORDS);
-        const chunkText = chunkWords.join(' ');
-
-        const pageOffset = pageText.indexOf(chunkWords[0]);
-        const startOffset = globalCharOffset + (pageOffset >= 0 ? pageOffset : 0);
-        const endOffset = startOffset + chunkText.length;
-
-        allChunks.push({
-          chunkId: `chunk-${globalChunkIndex++}`,
-          text: chunkText,
-          pageNumber: page.pageNumber,
-          charOffsetStart: startOffset,
-          charOffsetEnd: endOffset,
-          documentName: docName
-        });
-
-        if (i + CHUNK_SIZE_WORDS >= words.length) {
-          break;
-        }
-      }
+      const result = slicePageIntoChunks(pageText, page.pageNumber, docName, globalChunkIndex, globalCharOffset);
+      allChunks.push(...result.chunks);
+      globalChunkIndex = result.nextChunkIndex;
 
       globalCharOffset += pageText.length + 1;
     }

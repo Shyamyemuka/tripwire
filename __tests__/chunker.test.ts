@@ -22,6 +22,23 @@ Cash reserves stood at $14 million. The company declared a regular quarterly div
         expect(chunk.charOffsetStart).toBeLessThanOrEqual(chunk.charOffsetEnd);
       });
     });
+
+    it('snaps cleanly to sentence boundaries and avoids trailing orphan words', () => {
+      // Create a passage with distinct sentences where a word boundary falls right after a period
+      const sentence1 = 'Cryptographic algorithms cannot be replaced until all components are prepared. ';
+      const sentence2 = 'Consequently, algorithm replacement can be extremely disruptive and takes decades to complete. ';
+      const sentence3 = 'All public-key algorithms are vulnerable to attacks based on Shor algorithm. ';
+      const sentence4 = 'This vulnerability requires immediate migration to post-quantum standards.';
+      const longText = (sentence1 + sentence2 + sentence3).repeat(10) + sentence4;
+
+      const { chunks } = chunkPlainText(longText, 'crypto.txt');
+      expect(chunks.length).toBeGreaterThan(1);
+
+      // Verify that every multi-sentence chunk ends with valid terminal punctuation, not an orphan word
+      for (const chunk of chunks) {
+        expect(/[.!?]["']?$/.test(chunk.text.trim())).toBe(true);
+      }
+    });
   });
 
   describe('Multi-Document Chunking & Document Attribution', () => {
