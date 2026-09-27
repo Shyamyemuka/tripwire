@@ -230,13 +230,27 @@ export async function POST(req: NextRequest) {
 
       for (const res of probeResults) {
         if (res.candidates && res.candidates.length > 0) {
-          const firstSentence = res.candidates[0].text
+          const rawSnippet = res.candidates[0].text
             .split(/[.!?\n]/)
             .map(s => s.trim())
-            .find(s => s.length > 15 && s.length < 90);
+            .find(s => s.length > 15 && s.length < 80);
 
-          if (firstSentence && !suggestedTopics.includes(firstSentence)) {
-            suggestedTopics.push(firstSentence);
+          if (rawSnippet) {
+            const cleanTopic = rawSnippet
+              .replace(/^[\d\.\-\•\*\s]+/, '')
+              .replace(/[\•\*].*$/, '')
+              .replace(/\s+/g, ' ')
+              .trim();
+
+            if (cleanTopic.length > 10) {
+              const formattedQuestion = cleanTopic.endsWith('?')
+                ? cleanTopic
+                : `What does the document state regarding ${cleanTopic}?`;
+
+              if (!suggestedTopics.includes(formattedQuestion)) {
+                suggestedTopics.push(formattedQuestion);
+              }
+            }
           }
         }
       }
@@ -244,13 +258,18 @@ export async function POST(req: NextRequest) {
       console.warn('Failed to generate dynamic topic suggestions:', e);
     }
 
-    // Fallback if probes produce no short sentences
-    if (suggestedTopics.length === 0 && enrichedChunks.length > 0) {
-      suggestedTopics.push(
+    // Ensure at least 3 high-quality sample questions
+    if (suggestedTopics.length < 3 && enrichedChunks.length > 0) {
+      const defaults = [
         'What are the core requirements outlined in this document?',
         'What key security or operational guidelines are specified?',
         'Are there any notable exceptions, limitations, or risk disclosures?'
-      );
+      ];
+      for (const d of defaults) {
+        if (suggestedTopics.length < 3 && !suggestedTopics.includes(d)) {
+          suggestedTopics.push(d);
+        }
+      }
     }
 
     const finalMeta = {

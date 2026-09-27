@@ -13,8 +13,6 @@ import {
   Loader2,
 } from "lucide-react";
 
-import { Zap, Sparkles } from "lucide-react";
-
 interface QAThreadProps {
   qaTurns: QATurn[];
   onSelectSentence: (record: SentenceVerificationRecord) => void;
@@ -168,10 +166,9 @@ export const QAThread: React.FC<QAThreadProps> = ({
 
         {/* Feature 3: Dynamic Document Topic Chips */}
         {suggestedTopics.length > 0 && (
-          <div className="w-full space-y-2.5 animate-blur-fade-up">
-            <div className="flex items-center justify-center gap-1.5 text-[11px] font-mono text-neutral-400">
-              <Zap className="w-3 h-3 text-emerald-400 fill-current" />
-              <span>Moss Auto-Probed Topic Prompts (Sub-10ms Header Scan)</span>
+          <div className="w-full space-y-3 animate-blur-fade-up">
+            <div className="text-center text-xs font-medium text-neutral-400">
+              Ask sample questions based on the document:
             </div>
 
             <div className="flex flex-col sm:flex-row flex-wrap items-center justify-center gap-2">
@@ -182,8 +179,7 @@ export const QAThread: React.FC<QAThreadProps> = ({
                   onClick={() => onSelectTopicChip?.(topic)}
                   className="px-3.5 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/15 text-xs text-neutral-200 hover:text-white transition-all text-left flex items-center gap-2 max-w-full hover:border-emerald-500/40 group shadow-sm"
                 >
-                  <Sparkles className="w-3.5 h-3.5 text-emerald-400 shrink-0 group-hover:scale-110 transition-transform" />
-                  <span className="truncate">&ldquo;{topic}&rdquo;</span>
+                  <span className="truncate">{topic}</span>
                 </button>
               ))}
             </div>
