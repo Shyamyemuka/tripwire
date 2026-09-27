@@ -41,30 +41,34 @@ flowchart TD
 - **In-Stream Factual Verification**: Evaluates grammatical claims concurrently as tokens stream, eliminating the multi-second post-generation evaluation bottleneck.
 - **"Similarity Is Not Truth" Safeguard**: Decouples retrieval from factual judgment. High vector similarity does not imply agreement—Tripwire detects subtle direction flips (*"increased"* vs. *"decreased"*) and altered metrics that standard RAG systems falsely trust.
 - **Sub-10ms Moss Retrieval Layer**: Leverages Moss to resolve independent, per-sentence vector queries in single-digit milliseconds, keeping pace with raw LLM generation.
+- **Spotlight Semantic Palette (`Cmd+K`)**: Instant document-wide semantic search powered by Moss, featuring one-click QA prompt seeding and excerpt copying.
+- **Counter-Evidence & Caveat Probing**: Synthesizes contrast vectors to surface hidden exceptions, limitations, and policy exemptions for any selected claim in <10ms.
+- **Dynamic Topic Seed Chips**: Clusters document vectors on ingestion to generate 3 tailored analytical starter questions on zero-state threads.
 - **Ordered Progressive Rendering**: Even with parallelized background retrieval and classification, visual highlights resolve in strict reading order to prevent visual jitter.
 - **Transparent A/B Latency Benchmarking**: Integrated side-by-side mode comparing Moss against an un-mocked brute-force vector scan, instrumented with real microsecond clocks.
-- **Adversarial Stress-Testing Mode**: Built-in adversarial evaluation engine that dynamically mutates numbers and trend polarities to stress-test real-time hallucination catch rates.
+- **3-Layer Resilient Document Parsing**: Multi-tier extraction spanning `pdf-parse`, pure Node.js zlib stream inflation, and Gemini Multimodal OCR for scanned PDFs.
 - **Interactive Citation & Audit Inspector**: Direct click-to-inspect citations displaying source document passages, page numbers, character offsets, and contradiction explanations.
 
 ---
 
 ## Tech Stack Overview
 
-- **Core Framework**: Next.js (App Router) & React (Server-Sent Events streaming)
+- **Core Framework**: Next.js 16 (App Router & Turbopack) & React 19 (Server-Sent Events streaming)
 - **Language & Runtime**: TypeScript & Node.js
-- **Retrieval Engine**: `@moss-dev/moss` (Sub-10ms vector indexing and query execution)
-- **Language Models**: Google Gemini API via `@google/genai` (Streaming generation & semantic entailment)
-- **Document Processing**: Pure Node.js streaming parser & `pdf-parse`
-- **Client State & Audit**: Client-side IndexedDB for zero-database session persistence
+- **Retrieval Engine**: `@moss-dev/moss` (Sub-10ms in-process HNSW vector indexing and search)
+- **Language Models**: Google Gemini 2.5 Flash via `@google/genai` (Streaming generation & CRISPE entailment)
+- **Session & Caching**: In-Memory session registry with Upstash Redis rehydration
+- **Styling**: Tailwind CSS v4 & Lucide Icons
+- **Verification Suite**: Jest 30 & ts-jest with 67+ automated invariant tests
 
 ---
 
 ## System Architecture Overview
 
 Tripwire is organized into a clean decoupled pipeline:
-- **Client Workspace**: Manages token streaming, live sentence boundary detection, ordered claim rendering, and interactive source inspection.
-- **API Edge Endpoints**: Handles document session ingestion (`/api/session`), live streaming token generation (`/api/generate`), per-sentence verification (`/api/verify`), and automated contradiction explanation (`/api/explain`).
-- **Core Pipeline Engine**: Modularized retrieval, baseline cosine benchmarking, semantic entailment scoring, and resilient multi-key failover.
+- **Client Workspace**: Manages token streaming, live sentence boundary detection, ordered claim rendering, Spotlight search modal, and interactive source inspection.
+- **API Edge Endpoints**: Handles document session ingestion (`/api/session`), live streaming token generation (`/api/generate`), per-sentence verification (`/api/verify`), semantic search (`/api/search`), counter-evidence probing (`/api/counter-evidence`), automated contradiction explanation (`/api/explain`), and voice transcription (`/api/transcribe`).
+- **Core Pipeline Engine**: Modularized retrieval, baseline cosine benchmarking, CRISPE semantic entailment scoring, and resilient multi-key failover.
 
 ---
 
@@ -103,6 +107,9 @@ npm install
 
 # Run development server
 npm run dev
+
+# Run automated invariant tests
+npm test
 
 # Build for production
 npm run build
