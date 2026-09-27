@@ -65,27 +65,52 @@ function extractPdfTextPureNode(buffer: Buffer): PageInput[] {
       }
       return pages;
     }
-  } catch (err) {
-    console.warn('Pure Node PDF stream extraction failed, falling back to Gemini:', err);
+  } catch {
+    // Proceed to next extraction layer
   }
   return [];
 }
 
 /**
  * FR-1: Resilient Multi-Layer Document Intake (PDF text extraction)
- * Layer 1: Local fast pdf-parse (works on local Node).
- * Layer 2: Pure Node.js zlib stream extractor (works 100% on Vercel without workers or canvas).
+ * Layer 1: Pure Node.js zlib stream extraction (100% native on Vercel/Serverless in 5ms, zero worker overhead).
+ * Layer 2: Local pdf-parse (zero-worker CJS parser for non-stream / standard text PDFs).
  * Layer 3: Gemini Multimodal Document Processing (gemini-3.6-flash fallback for complex/scanned PDFs).
  */
 export async function extractTextFromPdf(buffer: Buffer): Promise<PageInput[]> {
-  // Layer 1: Try local fast pdf-parse
+  // Layer 1: Pure Node.js zlib stream extraction (Runs natively on Vercel in 5ms without worker threads or dynamic imports)
+  try {
+    const purePages = extractPdfTextPureNode(buffer);
+    if (purePages.length > 0) {
+      return purePages;
+    }
+  } catch {
+    // Fall through to Layer 2
+  }
+
+  // Layer 2: Local fast pdf-parse (zero-worker CommonJS parser)
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const pdfModule = require('pdf-parse');
-    const PDFParse = pdfModule.PDFParse || pdfModule.default?.PDFParse || pdfModule;
+    const parseFn = typeof pdfModule === 'function' ? pdfModule : pdfModule.default;
 
-    if (typeof PDFParse === 'function' && PDFParse.prototype?.getText) {
-      const parser = new PDFParse({ data: new Uint8Array(buffer) });
+    if (typeof parseFn === 'function') {
+      const data = await parseFn(buffer);
+      const text = (data?.text || '').trim();
+      if (text.length >= 20) {
+        const words = text.split(/\s+/).filter(Boolean);
+        const pages: PageInput[] = [];
+        let pageNum = 1;
+        for (let i = 0; i < words.length; i += 350) {
+          pages.push({
+            pageNumber: pageNum++,
+            text: words.slice(i, i + 350).join(' ')
+          });
+        }
+        return pages.length > 0 ? pages : [{ pageNumber: 1, text }];
+      }
+    } else if (pdfModule?.PDFParse) {
+      const parser = new pdfModule.PDFParse({ data: new Uint8Array(buffer) });
       const result = await parser.getText();
       await parser.destroy();
 
@@ -98,29 +123,12 @@ export async function extractTextFromPdf(buffer: Buffer): Promise<PageInput[]> {
         .filter((p: PageInput) => p.text.length > 0);
 
       const fullLength = pages.reduce((acc: number, p: PageInput) => acc + p.text.length, 0);
-
       if (fullLength >= 20 && pages.length > 0) {
         return pages;
       }
-    } else if (typeof pdfModule === 'function') {
-      const data = await pdfModule(buffer);
-      const text = (data?.text || '').trim();
-      if (text.length >= 20) {
-        return [{ pageNumber: 1, text }];
-      }
     }
-  } catch (localErr) {
-    console.warn('Layer 1 (pdf-parse) failed (expected on serverless / Vercel), attempting Layer 2 (Pure Node zlib)...', localErr);
-  }
-
-  // Layer 2: Pure Node.js zlib stream extraction (Runs natively on Vercel in 5ms without worker threads)
-  try {
-    const purePages = extractPdfTextPureNode(buffer);
-    if (purePages.length > 0) {
-      return purePages;
-    }
-  } catch (pureErr) {
-    console.warn('Layer 2 (Pure Node) extraction failed, attempting Layer 3 (Gemini multimodal)...', pureErr);
+  } catch {
+    // Fall through to Layer 3
   }
 
   // Layer 3: Fallback to Gemini Multimodal Document Processing (gemini-3.6-flash)

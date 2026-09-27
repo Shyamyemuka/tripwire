@@ -72,19 +72,6 @@ export async function POST(req: NextRequest) {
 
     const bestCandidate = candidates[0];
 
-    // Externalize session state: Touch Redis asynchronously in background (non-blocking)
-    if (sessionId) {
-      import('@/lib/redis')
-        .then(({ getRedisSession, updateRedisSession }) => {
-          getRedisSession(sessionId)
-            .then((session) => {
-              if (session) updateRedisSession(sessionId, session).catch(() => {});
-            })
-            .catch(() => {});
-        })
-        .catch(() => {});
-    }
-
     return NextResponse.json({
       status: verdictResult.status,
       matchedChunkId: bestCandidate ? bestCandidate.chunkId : null,
